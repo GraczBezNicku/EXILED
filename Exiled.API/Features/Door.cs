@@ -224,9 +224,11 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="doorVariant">The base-game <see cref="DoorVariant"/>.</param>
         /// <returns>A <see cref="Door"/> wrapper object.</returns>
-        public static Door Get(DoorVariant doorVariant) => DoorVariantToDoor.ContainsKey(doorVariant)
-            ? DoorVariantToDoor[doorVariant]
-            : new Door(doorVariant);
+        public static Door Get(DoorVariant doorVariant) => doorVariant is null
+            ? null
+            : DoorVariantToDoor.ContainsKey(doorVariant)
+                ? DoorVariantToDoor[doorVariant]
+                : new Door(doorVariant);
 
         /// <summary>
         /// Gets a <see cref="Door"/> given the specified name.

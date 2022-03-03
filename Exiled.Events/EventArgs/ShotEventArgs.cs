@@ -29,7 +29,10 @@ namespace Exiled.Events.EventArgs
         {
             Shooter = shooter;
             Damage = damage;
-            Distance = hit.distance;
+
+            if (hit.collider != null)
+                Distance = hit.distance;
+            RaycastHit = hit;
 
             if (destructible is HitboxIdentity identity)
             {
@@ -67,5 +70,10 @@ namespace Exiled.Events.EventArgs
         /// Gets or sets a value indicating whether or not the shot can hurt the target.
         /// </summary>
         public bool CanHurt { get; set; } = true;
+
+        /// <summary>
+        /// Gets the <see cref="RaycastHit"/> for the object hit (if any)"/>.
+        /// </summary>
+        public RaycastHit RaycastHit { get; }
     }
 }

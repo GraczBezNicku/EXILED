@@ -10,6 +10,7 @@ namespace Exiled.API.Features
 #pragma warning disable 1584
     using System;
     using System.Collections.Generic;
+    using System.ComponentModel;
     using System.Linq;
     using System.Reflection;
     using System.Runtime.CompilerServices;
@@ -21,7 +22,6 @@ namespace Exiled.API.Features
     using Exiled.API.Features.DamageHandlers;
     using Exiled.API.Features.Items;
     using Exiled.API.Features.Roles;
-    using Exiled.API.Interfaces;
     using Exiled.API.Structs;
 
     using Footprinting;
@@ -423,7 +423,7 @@ namespace Exiled.API.Features
         /// </para>
         /// <para>
         /// If the role object is stored, it may become invalid if the player changes roles. Thus, the <see cref="Role.IsValid"/> property can be checked. If this property is <see langword="false"/>, the role should be discarded and this property should be used again to get the new Role.
-        /// This role is automatically cached until it changes, and it is recommended to use this propertly directly rather than storing the property yourself.
+        /// This role is automatically cached until it changes, and it is recommended to use this property directly rather than storing the property yourself.
         /// </para>
         /// <para>
         /// Roles and RoleTypes can be compared directly. <c>Player.Role == RoleType.Scp079</c> is valid and will return <see langword="true"/> if the player is SCP-079. To set the player's role, see <see cref="SetRole(RoleType, SpawnReason, bool)"/>.
@@ -529,35 +529,35 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets a value indicating whether the player is dead.
         /// </summary>
-        public bool IsDead => Role?.Type == RoleType.Spectator || Role?.Type == RoleType.None;
+        public bool IsDead => Role.Type == RoleType.Spectator || Role.Type == RoleType.None;
 
         /// <summary>
         /// Gets a value indicating whether the player's <see cref="RoleType"/> is any NTF rank.
         /// Equivalent to checking the player's <see cref="Team"/>.
         /// </summary>
-        public bool IsNTF => Role?.Team == Team.MTF;
+        public bool IsNTF => Role.Team == Team.MTF;
 
         /// <summary>
         /// Gets a value indicating whether or not the player's <see cref="RoleType"/> is any Chaos rank.
         /// Equivalent to checking the player's <see cref="Team"/>.
         /// </summary>
-        public bool IsCHI => Role?.Team == Team.CHI;
+        public bool IsCHI => Role.Team == Team.CHI;
 
         /// <summary>
         /// Gets a value indicating whether the player's <see cref="RoleType"/> is any SCP rank.
         /// Equivalent to checking the player's <see cref="Team"/>.
         /// </summary>
-        public bool IsScp => Role?.Team == Team.SCP;
+        public bool IsScp => Role.Team == Team.SCP;
 
         /// <summary>
         /// Gets a value indicating whether the player's <see cref="RoleType"/> is any human rank.
         /// </summary>
-        public bool IsHuman => Role != null && Role.Is(out HumanRole _);
+        public bool IsHuman => Role.Type != RoleType.Spectator && Role.Type != RoleType.None && Role.Team != Team.SCP;
 
         /// <summary>
         /// Gets a value indicating whether the player's <see cref="RoleType"/> is equal to <see cref="RoleType.Tutorial"/>.
         /// </summary>
-        public bool IsTutorial => Role?.Type == RoleType.Tutorial;
+        public bool IsTutorial => Role.Type == RoleType.Tutorial;
 
         /// <summary>
         /// Gets or sets a value indicating whether the player's friendly fire is enabled.
@@ -1189,10 +1189,8 @@ namespace Exiled.API.Features
             if (cuffer?.ReferenceHub == null)
                 return;
 
-            if (!IsCuffed && Vector3.Distance(Position, cuffer.Position) <= 130f)
-            {
+            if (!IsCuffed && (Position - cuffer.Position).sqrMagnitude <= 16900f)
                 Cuffer = cuffer;
-            }
         }
 
         /// <summary>
@@ -1210,10 +1208,7 @@ namespace Exiled.API.Features
         /// <param name="newRole">The new <see cref="RoleType"/> to be set.</param>
         /// <param name="reason">The <see cref="SpawnReason"/> defining why the player's role was changed.</param>
         /// <param name="lite">Indicates whether it should preserve the position and inventory after changing the role.</param>
-        public void SetRole(RoleType newRole, SpawnReason reason = SpawnReason.ForceClass, bool lite = false)
-        {
-            ReferenceHub.characterClassManager.SetPlayersClass(newRole, GameObject, (CharacterClassManager.SpawnReason)reason, lite);
-        }
+        public void SetRole(RoleType newRole, SpawnReason reason = SpawnReason.ForceClass, bool lite = false) => ReferenceHub.characterClassManager.SetPlayersClass(newRole, GameObject, (CharacterClassManager.SpawnReason)reason, lite);
 
         /// <summary>
         /// Broadcasts the given <see cref="Features.Broadcast"/> to the player.
@@ -1443,10 +1438,7 @@ namespace Exiled.API.Features
         /// <param name="message">The message to be sent.</param>
         /// <param name="success">Indicates whether the message should be highlighted as success.</param>
         /// <param name="pluginName">The plugin name.</param>
-        public void RemoteAdminMessage(string message, bool success = true, string pluginName = null)
-        {
-            Sender.RaReply((pluginName ?? Assembly.GetCallingAssembly().GetName().Name) + "#" + message, success, true, string.Empty);
-        }
+        public void RemoteAdminMessage(string message, bool success = true, string pluginName = null) => Sender.RaReply((pluginName ?? Assembly.GetCallingAssembly().GetName().Name) + "#" + message, success, true, string.Empty);
 
         /// <summary>
         /// Shows a broadcast to the player. Doesn't get logged to the console and can be monospaced.
@@ -1473,7 +1465,12 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="ammoType">The <see cref="AmmoType"/> to be added.</param>
         /// <param name="amount">The amount of ammo to be added.</param>
-        public void AddAmmo(AmmoType ammoType, ushort amount) => Inventory.ServerAddAmmo(ammoType.GetItemType(), amount);
+        public void AddAmmo(AmmoType ammoType, ushort amount)
+        {
+            if (ammoType == AmmoType.None)
+                throw new InvalidEnumArgumentException(nameof(ammoType), (int)AmmoType.None, typeof(AmmoType));
+            Inventory.ServerAddAmmo(ammoType.GetItemType(), amount);
+        }
 
         /// <summary>
         /// Adds the amount of a weapon's <see cref="AmmoType">ammo type</see> to the player's inventory.
@@ -1487,7 +1484,12 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="ammoType">The <see cref="AmmoType"/> to be set.</param>
         /// <param name="amount">The amount of ammo to be set.</param>
-        public void SetAmmo(AmmoType ammoType, ushort amount) => Inventory.ServerSetAmmo(ammoType.GetItemType(), amount);
+        public void SetAmmo(AmmoType ammoType, ushort amount)
+        {
+            if (ammoType == AmmoType.None)
+                throw new InvalidEnumArgumentException(nameof(ammoType), (int)AmmoType.None, typeof(AmmoType));
+            Inventory.ServerSetAmmo(ammoType.GetItemType(), amount);
+        }
 
         /// <summary>
         /// Gets the ammo count of a specified <see cref="AmmoType">ammo type</see> in a player's inventory.

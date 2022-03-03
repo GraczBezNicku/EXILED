@@ -80,9 +80,9 @@ namespace Exiled.Events.EventArgs
         }
 
         /// <summary>
-        /// Gets a value indicating whether the server is full.
+        /// Gets or sets a value indicating whether the server is full.
         /// </summary>
-        public bool ServerFull { get; }
+        public bool ServerFull { get; set; }
 
         /// <summary>
         /// Delays the connection.

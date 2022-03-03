@@ -59,6 +59,6 @@ namespace Exiled.API.Features.Roles
         /// </summary>
         /// <param name="ragdoll">The ragdoll to check.</param>
         /// <returns><see langword="true"/> if close enough to revive the body; otherwise, <see langword="false"/>.</returns>
-        public bool InRecallRange(Ragdoll ragdoll) => Vector3.Distance(Owner.ReferenceHub.transform.position, ragdoll.Position) <= PlayableScps.Scp049.ReviveDistance * 1.3f;
+        public bool InRecallRange(Ragdoll ragdoll) => (Owner.ReferenceHub.transform.position - ragdoll.Position).sqrMagnitude <= ((PlayableScps.Scp049.ReviveDistance * 1.3f) * (PlayableScps.Scp049.ReviveDistance * 1.3f));
     }
 }

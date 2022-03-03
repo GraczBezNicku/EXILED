@@ -12,7 +12,7 @@ namespace Exiled.Events.EventArgs
     using Exiled.API.Features;
 
     /// <summary>
-    /// Contains all informations before triggering a tesla.
+    /// Contains all information before triggering a tesla.
     /// </summary>
     public class TriggeringTeslaEventArgs : EventArgs
     {
@@ -25,7 +25,6 @@ namespace Exiled.Events.EventArgs
         {
             Player = player;
             Tesla = teslaGate;
-            IsInHurtingRange = Tesla.PlayerInHurtRange(player);
             IsTriggerable = Tesla.PlayerInTriggerRange(player);
         }
 
@@ -38,11 +37,6 @@ namespace Exiled.Events.EventArgs
         /// Gets the Tesla.
         /// </summary>
         public TeslaGate Tesla { get; }
-
-        /// <summary>
-        /// Gets or sets a value indicating whether or not the player is in hurting range.
-        /// </summary>
-        public bool IsInHurtingRange { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether or not the tesla is going to be activated.

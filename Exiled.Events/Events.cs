@@ -70,11 +70,6 @@ namespace Exiled.Events
             instance = this;
             base.OnEnabled();
 
-            Stopwatch watch = Stopwatch.StartNew();
-            Patch();
-
-            watch.Stop();
-            Log.Info($"Patching completed in {watch.Elapsed}");
             SceneManager.sceneUnloaded += Handlers.Internal.SceneUnloaded.OnSceneUnloaded;
 
             Handlers.Server.WaitingForPlayers += Handlers.Internal.Round.OnWaitingForPlayers;
