@@ -15,7 +15,8 @@ namespace Exiled.Events.Patches.Generic
 
     using API.Features;
     using API.Features.Items;
-
+    using API.Features.Pools;
+    using Exiled.API.Features.Pickups;
     using HarmonyLib;
 
     using InventorySystem;
@@ -23,8 +24,6 @@ namespace Exiled.Events.Patches.Generic
     using InventorySystem.Items.Pickups;
 
     using MEC;
-
-    using NorthwoodLib.Pools;
 
     using static HarmonyLib.AccessTools;
 
@@ -40,7 +39,7 @@ namespace Exiled.Events.Patches.Generic
             IEnumerable<CodeInstruction> instructions,
             ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             const int offset = -2;
             int index = newInstructions.FindIndex(
@@ -71,15 +70,15 @@ namespace Exiled.Events.Patches.Generic
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
 
         private static void AddItem(Player player, ItemBase itemBase, ItemPickupBase itemPickupBase)
         {
             Item item = Item.Get(itemBase);
+            Pickup pickup = Pickup.Get(itemPickupBase);
 
-            if (itemPickupBase != null)
-                item.Scale = itemPickupBase.transform.localScale;
+            item.ReadPickupInfo(pickup);
 
             player?.ItemsValue.Add(item);
         }
@@ -95,7 +94,7 @@ namespace Exiled.Events.Patches.Generic
             IEnumerable<CodeInstruction> instructions,
             ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
             const int offset = 1;
             int index = newInstructions.FindIndex(i => i.opcode == OpCodes.Throw) + offset;
 
@@ -119,7 +118,7 @@ namespace Exiled.Events.Patches.Generic
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
 
         private static void RemoveItem(Player player, ushort serial)

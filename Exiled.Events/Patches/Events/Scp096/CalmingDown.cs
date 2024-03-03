@@ -11,28 +11,28 @@ namespace Exiled.Events.Patches.Events.Scp096
     using System.Reflection.Emit;
 
     using API.Features;
-
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Scp096;
 
     using HarmonyLib;
 
-    using NorthwoodLib.Pools;
-
     using PlayerRoles.PlayableScps.Scp096;
-    using PlayerRoles.PlayableScps.Subroutines;
+    using PlayerRoles.Subroutines;
 
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="Scp096RageManager.ServerEndEnrage(bool)" />.
-    ///     Adds the <see cref="Handlers.Scp096.CalmingDown" /> event.
+    /// Patches <see cref="Scp096RageManager.ServerEndEnrage(bool)" />.
+    /// Adds the <see cref="Handlers.Scp096.CalmingDown" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Scp096), nameof(Handlers.Scp096.CalmingDown))]
     [HarmonyPatch(typeof(Scp096RageManager), nameof(Scp096RageManager.ServerEndEnrage))]
     internal static class CalmingDown
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
@@ -41,23 +41,13 @@ namespace Exiled.Events.Patches.Events.Scp096
             const int offset = 0;
             int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Ldarg_1) + offset;
 
-            // CalmingDownEventArgs ev = new(this, Player, clearTime, true);
-            //
-            // Handlers.Scp096.OnCalmingDown(ev);
-            //
-            // if (!ev.IsAllowed)
-            //     return;
             newInstructions.InsertRange(
                 index,
                 new[]
                 {
-                    // base.ScpRole
-                    new CodeInstruction(OpCodes.Ldarg_0).MoveLabelsFrom(newInstructions[index]),
-                    new(OpCodes.Call, PropertyGetter(typeof(ScpStandardSubroutine<Scp096Role>), nameof(ScpStandardSubroutine<Scp096Role>.ScpRole))),
-
                     // Player.Get(base.Owner)
-                    new(OpCodes.Ldarg_0),
-                    new(OpCodes.Call, PropertyGetter(typeof(ScpStandardSubroutine<Scp096Role>), nameof(ScpStandardSubroutine<Scp096Role>.Owner))),
+                    new CodeInstruction(OpCodes.Ldarg_0).MoveLabelsFrom(newInstructions[index]),
+                    new(OpCodes.Call, PropertyGetter(typeof(StandardSubroutine<Scp096Role>), nameof(StandardSubroutine<Scp096Role>.Owner))),
                     new(OpCodes.Call, Method(typeof(Player), nameof(Player.Get), new[] { typeof(ReferenceHub) })),
 
                     // clearTime
@@ -66,7 +56,7 @@ namespace Exiled.Events.Patches.Events.Scp096
                     // true
                     new(OpCodes.Ldc_I4_1),
 
-                    // CalmingDownEventArgs ev = new(Scp096Role, Player, bool, bool)
+                    // CalmingDownEventArgs ev = new(scp096, bool, bool)
                     new(OpCodes.Newobj, GetDeclaredConstructors(typeof(CalmingDownEventArgs))[0]),
                     new(OpCodes.Dup),
                     new(OpCodes.Dup),
@@ -91,7 +81,7 @@ namespace Exiled.Events.Patches.Events.Scp096
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

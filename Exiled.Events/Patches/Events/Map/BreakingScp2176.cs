@@ -11,31 +11,28 @@ namespace Exiled.Events.Patches.Events.Map
     using System.Reflection.Emit;
 
     using API.Features;
-
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Map;
-
     using Footprinting;
-
     using HarmonyLib;
-
     using InventorySystem.Items.ThrowableProjectiles;
-
-    using NorthwoodLib.Pools;
 
     using static HarmonyLib.AccessTools;
 
     using Map = Handlers.Map;
 
     /// <summary>
-    ///     Patches <see cref="Scp2176Projectile.ServerShatter" />.
-    ///     Supplements the <see cref="Map.ExplodingGrenade" /> event.
+    /// Patches <see cref="Scp2176Projectile.ServerShatter" />.
+    /// Supplements the <see cref="Map.ExplodingGrenade" /> event.
     /// </summary>
+    [EventPatch(typeof(Map), nameof(Map.ExplodingGrenade))]
     [HarmonyPatch(typeof(Scp2176Projectile), nameof(Scp2176Projectile.ServerShatter))]
     internal static class BreakingScp2176
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             // The return label
             Label retLabel = generator.DefineLabel();
@@ -53,11 +50,11 @@ namespace Exiled.Events.Patches.Events.Map
                     // this
                     new(OpCodes.Ldarg_0),
 
-                    // new List<Player>
-                    new(OpCodes.Newobj, GetDeclaredConstructors(typeof(List<Player>))[0]),
+                    // Is Allowed
+                    new(OpCodes.Ldc_I4_1),
 
-                    // new ExplodingGrenadeEventArgs(Player, EffectGrenade, List<Player>)
-                    new(OpCodes.Newobj, DeclaredConstructor(typeof(ExplodingGrenadeEventArgs), new[] { typeof(Player), typeof(EffectGrenade), typeof(List<Player>), })),
+                    // new ExplodingGrenadeEventArgs(Player, EffectGrenade)
+                    new(OpCodes.Newobj, DeclaredConstructor(typeof(ExplodingGrenadeEventArgs), new[] { typeof(Player), typeof(EffectGrenade), typeof(bool) })),
                     new(OpCodes.Dup),
 
                     // Handlers.Map.OnExplodingGrenade(ev);
@@ -74,7 +71,7 @@ namespace Exiled.Events.Patches.Events.Map
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

@@ -11,27 +11,27 @@ namespace Exiled.Events.Patches.Events.Player
     using System.Reflection.Emit;
 
     using API.Features;
-
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
-
-    using NorthwoodLib.Pools;
 
     using UnityEngine;
 
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="ServerConsole.Disconnect(GameObject, string)" />.
-    ///     Adds the <see cref="Handlers.Player.Kicked" /> event.
+    /// Patches <see cref="ServerConsole.Disconnect(GameObject, string)" />.
+    /// Adds the <see cref="Handlers.Player.Kicked" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.Kicked))]
     [HarmonyPatch(typeof(ServerConsole), nameof(ServerConsole.Disconnect), typeof(GameObject), typeof(string))]
     internal static class Kicked
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             int offset = 3;
 
@@ -52,7 +52,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

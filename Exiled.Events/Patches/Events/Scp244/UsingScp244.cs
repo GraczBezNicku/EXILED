@@ -10,6 +10,8 @@ namespace Exiled.Events.Patches.Events.Scp244
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Scp244;
 
     using Handlers;
@@ -18,22 +20,21 @@ namespace Exiled.Events.Patches.Events.Scp244
 
     using InventorySystem.Items.Usables.Scp244;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     using Player = API.Features.Player;
 
     /// <summary>
-    ///     Patches <see cref="Scp244Item" /> to add missing event handler to the
-    ///     <see cref="Scp244Item.ServerOnUsingCompleted" />.
+    /// Patches <see cref="Scp244Item" /> to add missing event handler to the
+    /// <see cref="Scp244.UsingScp244" />.
     /// </summary>
+    [EventPatch(typeof(Scp244), nameof(Scp244.UsingScp244))]
     [HarmonyPatch(typeof(Scp244Item), nameof(Scp244Item.ServerOnUsingCompleted))]
     internal static class UsingScp244
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
@@ -72,7 +73,7 @@ namespace Exiled.Events.Patches.Events.Scp244
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

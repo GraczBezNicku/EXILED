@@ -7,8 +7,11 @@
 
 namespace Exiled.Loader
 {
+    using System;
     using System.IO;
     using System.Reflection;
+
+    using MEC;
 
     using PluginAPI.Core.Attributes;
 
@@ -16,7 +19,7 @@ namespace Exiled.Loader
     using Paths = API.Features.Paths;
 
     /// <summary>
-    /// The PluginAPI Plugin class for the EXILED Loader.
+    /// The Northwood PluginAPI Plugin class for the EXILED Loader.
     /// </summary>
     public class LoaderPlugin
     {
@@ -32,6 +35,7 @@ namespace Exiled.Loader
         /// Called by PluginAPI when the plugin is enabled.
         /// </summary>
         [PluginEntryPoint("Exiled Loader", null, "Loads the EXILED Plugin Framework.", "Exiled-Team")]
+        [PluginPriority(byte.MinValue)]
         public void Enable()
         {
             if (!Config.IsEnabled)
@@ -39,13 +43,6 @@ namespace Exiled.Loader
                 Log.Info("EXILED is disabled on this server via config.");
                 return;
             }
-
-            /* TODO: Implement this with a dictionary of Game versions and the exiled versions it is compatible with.
-            if (GameCore.Version.VersionString != "your mom")
-            {
-                Log.Error("EXILED is not compatible with this version of the game, aborting...");
-                return;
-            }*/
 
             Log.Info($"Loading EXILED Version: {Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion}");
 
@@ -58,19 +55,7 @@ namespace Exiled.Loader
             Directory.CreateDirectory(Paths.Plugins);
             Directory.CreateDirectory(Paths.Dependencies);
 
-            if (!File.Exists(Path.Combine(Paths.Dependencies, "Exiled.API.dll")))
-            {
-                Log.Error($"Exiled.API.dll was not found at {Path.Combine(Paths.Dependencies, "Exiled.API.dll")}, Exiled won't be loaded!");
-                return;
-            }
-
-            if (!File.Exists(Path.Combine(Paths.Dependencies, "YamlDotNet.dll")))
-            {
-                Log.Error($"YamlDotNet.dll was not found at {Path.Combine(Paths.Dependencies, "YamlDotNet.dll")}, Exiled won't be loaded!");
-                return;
-            }
-
-            new Loader().Run();
+            Timing.RunCoroutine(new Loader().Run());
         }
     }
 }

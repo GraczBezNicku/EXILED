@@ -60,20 +60,40 @@ namespace Exiled.CustomRoles.API.Features
         public string AbilityType { get; }
 
         /// <summary>
-        /// Gets a <see cref="CustomRole"/> by name.
+        /// Gets a <see cref="CustomAbility"/> by name.
         /// </summary>
-        /// <param name="name">The name of the role to get.</param>
-        /// <returns>The role, or <see langword="null"/> if it doesn't exist.</returns>
-        public static CustomAbility Get(string name) => Registered?.FirstOrDefault(r => r.Name == name);
+        /// <param name="name">The name of the ability to get.</param>
+        /// <returns>The ability, or <see langword="null"/> if it doesn't exist.</returns>
+        public static CustomAbility? Get(string name) => Registered?.FirstOrDefault(r => r.Name == name);
 
         /// <summary>
-        /// Tries to get a <see cref="CustomRole"/> by name.
+        /// Gets a <see cref="CustomAbility"/> by type.
         /// </summary>
-        /// <param name="name">The name of the role to get.</param>
-        /// <param name="customAbility">The custom role.</param>
-        /// <returns>True if the role exists.</returns>
+        /// <param name="type">The type of the ability to get.</param>
+        /// <returns>The type, or <see langword="null"/> if it doesn't exist.</returns>
+        public static CustomAbility? Get(Type type) => Registered?.FirstOrDefault(r => r.GetType() == type);
+
+        /// <summary>
+        /// Tries to get a <see cref="CustomAbility"/> by type.
+        /// </summary>
+        /// <param name="type">The type of the ability to get.</param>
+        /// <param name="customAbility">The custom ability.</param>
+        /// <returns>True if the ability exists, otherwise false.</returns>
+        public static bool TryGet(Type type, out CustomAbility? customAbility)
+        {
+            customAbility = Get(type);
+
+            return customAbility is not null;
+        }
+
+        /// <summary>
+        /// Tries to get a <see cref="CustomAbility"/> by name.
+        /// </summary>
+        /// <param name="name">The name of the ability to get.</param>
+        /// <param name="customAbility">The custom ability.</param>
+        /// <returns>True if the ability exists.</returns>
         /// <exception cref="ArgumentNullException">If the name is <see langword="null"/> or an empty string.</exception>
-        public static bool TryGet(string name, out CustomAbility customAbility)
+        public static bool TryGet(string name, out CustomAbility? customAbility)
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentNullException(nameof(name));
@@ -89,7 +109,7 @@ namespace Exiled.CustomRoles.API.Features
         /// <param name="skipReflection">Whether or not reflection is skipped (more efficient if you are not using your custom item classes as config objects).</param>
         /// <param name="overrideClass">The class to search properties for, if different from the plugin's config class.</param>
         /// <returns>A <see cref="IEnumerable{T}"/> of <see cref="CustomAbility"/> which contains all registered <see cref="CustomAbility"/>'s.</returns>
-        public static IEnumerable<CustomAbility> RegisterAbilities(bool skipReflection = false, object overrideClass = null)
+        public static IEnumerable<CustomAbility> RegisterAbilities(bool skipReflection = false, object? overrideClass = null)
         {
             List<CustomAbility> abilities = new();
             Assembly assembly = Assembly.GetCallingAssembly();
@@ -98,7 +118,7 @@ namespace Exiled.CustomRoles.API.Features
                 if (type.BaseType != typeof(CustomAbility) || type.GetCustomAttribute(typeof(CustomAbilityAttribute)) is null)
                     continue;
 
-                CustomAbility customAbility = null;
+                CustomAbility? customAbility = null;
 
                 if (!skipReflection && Server.PluginAssemblies.ContainsKey(assembly))
                 {
@@ -133,7 +153,7 @@ namespace Exiled.CustomRoles.API.Features
         /// <param name="skipReflection">Whether or not reflection is skipped (more efficient if you are not using your custom item classes as config objects).</param>
         /// <param name="overrideClass">The class to search properties for, if different from the plugin's config class.</param>
         /// <returns>A <see cref="IEnumerable{T}"/> of <see cref="CustomAbility"/> which contains all registered <see cref="CustomAbility"/>'s.</returns>
-        public static IEnumerable<CustomAbility> RegisterAbilities(IEnumerable<Type> targetTypes, bool isIgnored = false, bool skipReflection = false, object overrideClass = null)
+        public static IEnumerable<CustomAbility> RegisterAbilities(IEnumerable<Type> targetTypes, bool isIgnored = false, bool skipReflection = false, object? overrideClass = null)
         {
             List<CustomAbility> abilities = new();
             Assembly assembly = Assembly.GetCallingAssembly();
@@ -143,7 +163,7 @@ namespace Exiled.CustomRoles.API.Features
                     (isIgnored && targetTypes.Contains(type)) || (!isIgnored && !targetTypes.Contains(type)))
                     continue;
 
-                CustomAbility customAbility = null;
+                CustomAbility? customAbility = null;
 
                 if (!skipReflection && Server.PluginAssemblies.ContainsKey(assembly))
                 {
@@ -220,7 +240,7 @@ namespace Exiled.CustomRoles.API.Features
         /// </summary>
         /// <param name="player">The <see cref="Player"/> to check.</param>
         /// <returns>True if the player has this ability.</returns>
-        public virtual bool Check(Player player) => Players.Contains(player);
+        public virtual bool Check(Player player) => player is not null && Players.Contains(player);
 
         /// <summary>
         /// Adds this ability to the player.
@@ -228,6 +248,7 @@ namespace Exiled.CustomRoles.API.Features
         /// <param name="player">The <see cref="Player"/> to give the ability to.</param>
         public void AddAbility(Player player)
         {
+            Log.Debug($"Added {Name} to {player.Nickname}");
             Players.Add(player);
             AbilityAdded(player);
         }
@@ -238,6 +259,7 @@ namespace Exiled.CustomRoles.API.Features
         /// <param name="player">The <see cref="Player"/> to remove this ability from.</param>
         public void RemoveAbility(Player player)
         {
+            Log.Debug($"Removed {Name} from {player.Nickname}");
             Players.Remove(player);
             AbilityRemoved(player);
         }
@@ -258,7 +280,7 @@ namespace Exiled.CustomRoles.API.Features
         /// <returns>True if the ability registered properly.</returns>
         internal bool TryRegister()
         {
-            if (!CustomRoles.Instance.Config.IsEnabled)
+            if (!CustomRoles.Instance!.Config.IsEnabled)
                 return false;
 
             if (!Registered.Contains(this))

@@ -13,12 +13,11 @@ namespace Exiled.Events.Patches.Events.Player
     using AdminToys;
 
     using API.Features;
-
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
-
-    using NorthwoodLib.Pools;
 
     using PlayerStatsSystem;
 
@@ -27,15 +26,16 @@ namespace Exiled.Events.Patches.Events.Player
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="ShootingTarget.Damage(float, DamageHandlerBase, Vector3)" />.
-    ///     Adds the <see cref="Handlers.Player.DamagingShootingTarget" /> event.
+    /// Patches <see cref="ShootingTarget.Damage(float, DamageHandlerBase, Vector3)" />.
+    /// Adds the <see cref="Handlers.Player.DamagingShootingTarget" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.DamagingShootingTarget))]
     [HarmonyPatch(typeof(ShootingTarget), nameof(ShootingTarget.Damage))]
     internal static class DamagingShootingTarget
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             const int offset = 1;
             int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Stloc_2) + offset;
@@ -54,7 +54,7 @@ namespace Exiled.Events.Patches.Events.Player
                     new(OpCodes.Ldarg_1),
 
                     // distance
-                    new(OpCodes.Ldloc_2),
+                    new(OpCodes.Ldloc_3),
 
                     // hitLocation
                     new(OpCodes.Ldarg_3),
@@ -103,7 +103,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

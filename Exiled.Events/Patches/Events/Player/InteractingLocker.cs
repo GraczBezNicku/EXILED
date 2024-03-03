@@ -11,30 +11,29 @@ namespace Exiled.Events.Patches.Events.Player
     using System.Reflection.Emit;
 
     using API.Features;
-
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
-
     using MapGeneration.Distributors;
-
-    using NorthwoodLib.Pools;
 
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="Locker.ServerInteract(ReferenceHub, byte)" />.
-    ///     Adds the <see cref="Handlers.Player.InteractingLocker" /> event.
+    /// Patches <see cref="Locker.ServerInteract(ReferenceHub, byte)" />.
+    /// Adds the <see cref="Handlers.Player.InteractingLocker" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.InteractingLocker))]
     [HarmonyPatch(typeof(Locker), nameof(Locker.ServerInteract))]
     internal static class InteractingLocker
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
-            const int offset = 0;
-            int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Ldc_I4_S) + offset;
+            const int offset = -9;
+            int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Newobj) + offset;
 
             newInstructions.InsertRange(
                 index,
@@ -78,7 +77,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

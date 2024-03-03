@@ -15,7 +15,7 @@ namespace Exiled.API.Features.DamageHandlers
     using Enums;
 
     using Extensions;
-
+    using PlayerRoles.PlayableScps.Scp3114;
     using PlayerRoles.PlayableScps.Scp939;
 
     using PlayerStatsSystem;
@@ -116,6 +116,22 @@ namespace Exiled.API.Features.DamageHandlers
                         return DamageType.Scp939;
                     case JailbirdDamageHandler:
                         return DamageType.Jailbird;
+                    case Scp3114DamageHandler scp3114DamageHandler:
+                        return scp3114DamageHandler.Subtype switch
+                        {
+                            Scp3114DamageHandler.HandlerType.Strangulation => DamageType.Strangled,
+                            Scp3114DamageHandler.HandlerType.SkinSteal => DamageType.Scp3114,
+                            Scp3114DamageHandler.HandlerType.Slap => DamageType.Scp3114,
+                            _ => DamageType.Unknown,
+                        };
+                    case Scp049DamageHandler scp049DamageHandler:
+                        return scp049DamageHandler.DamageSubType switch
+                        {
+                            Scp049DamageHandler.AttackType.CardiacArrest => DamageType.CardiacArrest,
+                            Scp049DamageHandler.AttackType.Instakill => DamageType.Scp049,
+                            Scp049DamageHandler.AttackType.Scp0492 => DamageType.Scp0492,
+                            _ => DamageType.Unknown,
+                        };
                     case UniversalDamageHandler universal:
                         {
                             DeathTranslation translation = DeathTranslations.TranslationsById[universal.TranslationId];

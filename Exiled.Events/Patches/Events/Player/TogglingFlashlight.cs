@@ -10,35 +10,32 @@ namespace Exiled.Events.Patches.Events.Player
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
-    using API.Features;
-
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
 
-    using InventorySystem.Items.Flashlight;
-
-    using NorthwoodLib.Pools;
+    using InventorySystem.Items.ToggleableLights;
 
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="FlashlightNetworkHandler.ServerProcessMessage" />.
-    ///     Adds the <see cref="TogglingFlashlight" /> event.
+    /// Patches <see cref="FlashlightNetworkHandler.ServerProcessMessage" />.
+    /// Adds the <see cref="Handlers.Player.TogglingFlashlight" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.TogglingFlashlight))]
     [HarmonyPatch(typeof(FlashlightNetworkHandler), nameof(FlashlightNetworkHandler.ServerProcessMessage))]
     internal static class TogglingFlashlight
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             LocalBuilder ev = generator.DeclareLocal(typeof(TogglingFlashlightEventArgs));
 
-            Label retLabel = generator.DefineLabel();
-
-            int offset = 0;
-            int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Ldc_I4_S) + offset;
+            int offset = -8;
+            int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Newobj) + offset;
 
             newInstructions.InsertRange(
                 index,
@@ -46,76 +43,41 @@ namespace Exiled.Events.Patches.Events.Player
                 {
                     // Player.Get(referenceHub)
                     new CodeInstruction(OpCodes.Ldloc_0).MoveLabelsFrom(newInstructions[index]),
-                    new(OpCodes.Call, Method(typeof(Player), nameof(Player.Get), new[] { typeof(ReferenceHub) })),
 
-                    // flashlightItem
+                    // ToggleableLightItemBase
                     new(OpCodes.Ldloc_1),
 
                     // msg.NewState
                     new(OpCodes.Ldarg_1),
                     new(OpCodes.Ldfld, Field(typeof(FlashlightNetworkHandler.FlashlightMessage), nameof(FlashlightNetworkHandler.FlashlightMessage.NewState))),
 
-                    // true
-                    new(OpCodes.Ldc_I4_1),
-
-                    // TogglingFlashlightEventArgs ev = new(Player, FlashlightItem, bool, bool)
+                    // TogglingFlashlightEventArgs ev = new(Player, ToggleableLightItemBase, bool)
                     new(OpCodes.Newobj, GetDeclaredConstructors(typeof(TogglingFlashlightEventArgs))[0]),
-                    new(OpCodes.Dup),
                     new(OpCodes.Dup),
                     new(OpCodes.Stloc_S, ev.LocalIndex),
 
                     // Handlers.Player.OnTogglingFlashlight(ev)
                     new(OpCodes.Call, Method(typeof(Handlers.Player), nameof(Handlers.Player.OnTogglingFlashlight))),
-
-                    // if (!ev.IsAllowed)
-                    //    return;
-                    new(OpCodes.Callvirt, PropertyGetter(typeof(TogglingFlashlightEventArgs), nameof(TogglingFlashlightEventArgs.IsAllowed))),
-                    new(OpCodes.Brfalse_S, retLabel),
                 });
 
-            offset = -6;
-            index = newInstructions.FindLastIndex(instruction => instruction.opcode == OpCodes.Ldfld) + offset;
+            // Remove all msg.NewState to inject or logic
+            for (int i = 0; i < 2; i++)
+            {
+                offset = -1;
+                index = newInstructions.FindLastIndex(i => i.LoadsField(Field(typeof(FlashlightNetworkHandler.FlashlightMessage), nameof(FlashlightNetworkHandler.FlashlightMessage.NewState)))) + offset;
 
-            // Remove msg.NewState to inject or logic
-            newInstructions.RemoveRange(index, 2);
-
-            offset = -4;
-            index = newInstructions.FindLastIndex(instruction => instruction.opcode == OpCodes.Ldfld) + offset;
-
-            // Inject our logic
-            newInstructions.InsertRange(
-                index,
-                new CodeInstruction[]
+                newInstructions.RemoveRange(index, 2);
+                newInstructions.InsertRange(index, new CodeInstruction[]
                 {
-                    // ev.NewState
                     new(OpCodes.Ldloc_S, ev.LocalIndex),
                     new(OpCodes.Callvirt, PropertyGetter(typeof(TogglingFlashlightEventArgs), nameof(TogglingFlashlightEventArgs.NewState))),
                 });
-
-            offset = -1;
-            index = newInstructions.FindLastIndex(instruction => instruction.opcode == OpCodes.Ldfld) + offset;
-
-            // Remove msg.NewState to inject or logic
-            newInstructions.RemoveRange(index, 2);
-
-            index = newInstructions.FindLastIndex(instruction => instruction.opcode == OpCodes.Newobj);
-
-            // Inject our logic
-            newInstructions.InsertRange(
-                index,
-                new CodeInstruction[]
-                {
-                    // ev.NewState
-                    new(OpCodes.Ldloc_S, ev.LocalIndex),
-                    new(OpCodes.Callvirt, PropertyGetter(typeof(TogglingFlashlightEventArgs), nameof(TogglingFlashlightEventArgs.NewState))),
-                });
-
-            newInstructions[newInstructions.Count - 1].WithLabels(retLabel);
+            }
 
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

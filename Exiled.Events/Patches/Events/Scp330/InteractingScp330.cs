@@ -10,8 +10,10 @@ namespace Exiled.Events.Patches.Events.Scp330
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
-    using CustomPlayerEffects;
+    using API.Features.Pools;
 
+    using CustomPlayerEffects;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Scp330;
     using Exiled.Events.Handlers;
 
@@ -22,22 +24,21 @@ namespace Exiled.Events.Patches.Events.Scp330
     using InventorySystem;
     using InventorySystem.Items.Usables.Scp330;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     using Player = API.Features.Player;
 
     /// <summary>
-    ///     Patches the <see cref="Scp330Interobject.ServerInteract(ReferenceHub, byte)" /> method to add the
-    ///     <see cref="Scp330.InteractingScp330" /> event.
+    /// Patches the <see cref="Scp330Interobject.ServerInteract(ReferenceHub, byte)" /> method to add the
+    /// <see cref="Scp330.InteractingScp330" /> event.
     /// </summary>
+    [EventPatch(typeof(Scp330), nameof(Scp330.InteractingScp330))]
     [HarmonyPatch(typeof(Scp330Interobject), nameof(Scp330Interobject.ServerInteract))]
     public static class InteractingScp330
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label shouldNotSever = generator.DefineLabel();
             Label returnLabel = generator.DefineLabel();
@@ -45,7 +46,7 @@ namespace Exiled.Events.Patches.Events.Scp330
             LocalBuilder ev = generator.DeclareLocal(typeof(InteractingScp330EventArgs));
 
             // Remove original "No scp can touch" logic.
-            newInstructions.RemoveRange(0, 4);
+            newInstructions.RemoveRange(0, 3);
 
             // Find ServerProcessPickup, insert before it.
             int offset = -3;
@@ -111,6 +112,7 @@ namespace Exiled.Events.Patches.Events.Scp330
             // This is to find the location of the next return (End point)
             int includeSameLine = 1;
             int nextReturn = newInstructions.FindIndex(addShouldSeverIndex, instruction => instruction.opcode == OpCodes.Ret) + includeSameLine;
+            Label originalLabel = newInstructions[addShouldSeverIndex].ExtractLabels()[0];
 
             // Remove original code from after RpcMakeSound to next return and then fully replace it.
             newInstructions.RemoveRange(addShouldSeverIndex, nextReturn - addShouldSeverIndex);
@@ -124,17 +126,18 @@ namespace Exiled.Events.Patches.Events.Scp330
                 {
                     // if (!ev.ShouldSever)
                     //    goto shouldNotSever;
-                    new(OpCodes.Ldloc, ev.LocalIndex),
+                    new CodeInstruction(OpCodes.Ldloc, ev.LocalIndex).WithLabels(originalLabel),
                     new(OpCodes.Callvirt, PropertyGetter(typeof(InteractingScp330EventArgs), nameof(InteractingScp330EventArgs.ShouldSever))),
                     new(OpCodes.Brfalse, shouldNotSever),
 
-                    // ev.Player.EnableEffect("SevereHands", 0f, 0)
+                    // ev.Player.EnableEffect("SevereHands", 1, 0f, false)
                     new(OpCodes.Ldloc, ev.LocalIndex),
                     new(OpCodes.Callvirt, PropertyGetter(typeof(InteractingScp330EventArgs), nameof(InteractingScp330EventArgs.Player))),
                     new(OpCodes.Ldstr, nameof(SeveredHands)),
+                    new(OpCodes.Ldc_I4_1),
                     new(OpCodes.Ldc_R4, 0f),
                     new(OpCodes.Ldc_I4_0),
-                    new(OpCodes.Callvirt, Method(typeof(Player), nameof(Player.EnableEffect), new[] { typeof(string), typeof(float), typeof(bool) })),
+                    new(OpCodes.Callvirt, Method(typeof(Player), nameof(Player.EnableEffect), new[] { typeof(string), typeof(byte), typeof(float), typeof(bool) })),
                     new(OpCodes.Pop),
 
                     // return;
@@ -152,7 +155,7 @@ namespace Exiled.Events.Patches.Events.Scp330
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
 
         private static bool ServerProcessPickup(ReferenceHub player, CandyKindID candy, out Scp330Bag bag)

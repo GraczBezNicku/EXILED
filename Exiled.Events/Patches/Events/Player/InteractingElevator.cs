@@ -10,7 +10,9 @@ namespace Exiled.Events.Patches.Events.Player
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
-    using Exiled.API.Features;
+    using API.Features;
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
@@ -19,27 +21,24 @@ namespace Exiled.Events.Patches.Events.Player
 
     using Mirror;
 
-    using NorthwoodLib.Pools;
-
-    using PluginAPI.Enums;
-
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="ElevatorManager.ServerReceiveMessage(NetworkConnection, ElevatorManager.ElevatorSyncMsg)" />.
-    ///     Adds the <see cref="Handlers.Player.InteractingElevator" /> event.
+    /// Patches <see cref="ElevatorManager.ServerReceiveMessage(NetworkConnection, ElevatorManager.ElevatorSyncMsg)" />.
+    /// Adds the <see cref="Handlers.Player.InteractingElevator" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.InteractingElevator))]
     [HarmonyPatch(typeof(ElevatorManager), nameof(ElevatorManager.ServerReceiveMessage))]
     internal class InteractingElevator
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label @break = (Label)newInstructions.FindLast(i => i.opcode == OpCodes.Leave_S).operand;
 
-            int offset = 0;
-            int index = newInstructions.FindLastIndex(i => i.LoadsConstant(ServerEventType.PlayerInteractElevator)) + offset;
+            int offset = -2;
+            int index = newInstructions.FindLastIndex(i => i.opcode == OpCodes.Newobj) + offset;
 
             // InteractingElevatorEventArgs ev = new(Player.Get(referenceHub), elevatorChamber, true);
             //
@@ -77,7 +76,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

@@ -9,8 +9,11 @@ namespace Exiled.Events.Patches.Events.Player
 {
     using System.Collections.Generic;
     using System.Diagnostics;
+    using System.Reflection;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using Handlers;
@@ -19,7 +22,7 @@ namespace Exiled.Events.Patches.Events.Player
 
     using MapGeneration.Distributors;
 
-    using NorthwoodLib.Pools;
+    using PluginAPI.Events;
 
     using static HarmonyLib.AccessTools;
 
@@ -27,12 +30,17 @@ namespace Exiled.Events.Patches.Events.Player
     /// Patches <see cref="Scp079Generator.ServerInteract(ReferenceHub, byte)"/>.
     /// Adds the <see cref="Player.ActivatingGenerator"/>, <see cref="Player.ClosingGenerator"/>, <see cref="Player.OpeningGenerator"/>, <see cref="Player.UnlockingGenerator"/> and <see cref="Player.StoppingGenerator"/> events.
     /// </summary>
+    [EventPatch(typeof(Player), nameof(Player.ActivatingGenerator))]
+    [EventPatch(typeof(Player), nameof(Player.ClosingGenerator))]
+    [EventPatch(typeof(Player), nameof(Player.OpeningGenerator))]
+    [EventPatch(typeof(Player), nameof(Player.UnlockingGenerator))]
+    [EventPatch(typeof(Player), nameof(Player.StoppingGenerator))]
     [HarmonyPatch(typeof(Scp079Generator), nameof(Scp079Generator.ServerInteract))]
     internal static class InteractingGenerator
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             LocalBuilder player = generator.DeclareLocal(typeof(API.Features.Player));
             LocalBuilder isAllowedUnlocking = generator.DeclareLocal(typeof(bool));
@@ -59,8 +67,8 @@ namespace Exiled.Events.Patches.Events.Player
                     new(OpCodes.Stloc_S, player.LocalIndex),
                 });
 
-            offset = 7;
-            index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Br) + offset;
+            offset = -8;
+            index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Newobj && (ConstructorInfo)instruction.operand == GetDeclaredConstructors(typeof(PlayerCloseGeneratorEvent))[0]) + offset;
 
             // if (this.HasFlag(_flags, GeneratorFlags.Open))
             // {
@@ -161,8 +169,8 @@ namespace Exiled.Events.Patches.Events.Player
 
             newInstructions.RemoveRange(index, 7);
 
-            offset = 0;
-            int index2 = newInstructions.FindLastIndex(instruction => instruction.LoadsConstant(51)) + offset;
+            offset = -2;
+            int index2 = newInstructions.FindLastIndex(instruction => instruction.opcode == OpCodes.Newobj && (ConstructorInfo)instruction.operand == GetDeclaredConstructors(typeof(PlayerUnlockGeneratorEvent))[0]) + offset;
 
             newInstructions.InsertRange(
                 index,
@@ -302,7 +310,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

@@ -7,13 +7,18 @@
 
 namespace Exiled.API.Features.Items
 {
+    using Exiled.API.Features.Pickups;
+    using Exiled.API.Interfaces;
+    using InventorySystem.Items.Autosync;
     using InventorySystem.Items.Jailbird;
-    using UnityEngine;
+    using Mirror;
+
+    using JailbirdPickup = Pickups.JailbirdPickup;
 
     /// <summary>
     /// A wrapped class for <see cref="JailbirdItem"/>.
     /// </summary>
-    public class Jailbird : Item
+    public class Jailbird : Item, IWrapper<JailbirdItem>
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="Jailbird"/> class.
@@ -84,17 +89,6 @@ namespace Exiled.API.Features.Items
         }
 
         /// <summary>
-        /// Gets or sets the amount of damage remaining before the Jailbird breaks.
-        /// </summary>
-        /// <remarks>Modifying this value will directly modify <see cref="TotalDamageDealt"/>.</remarks>
-        /// <seealso cref="TotalDamageDealt"/>
-        public float RemainingDamage
-        {
-            get => JailbirdItem.DamageLimit - TotalDamageDealt;
-            set => TotalDamageDealt = Mathf.Clamp(JailbirdItem.DamageLimit - value, 0, JailbirdItem.DamageLimit);
-        }
-
-        /// <summary>
         /// Gets or sets the number of times the item has been charged and used.
         /// </summary>
         public int TotalCharges
@@ -104,14 +98,17 @@ namespace Exiled.API.Features.Items
         }
 
         /// <summary>
-        /// Gets or sets the amount of charges remaining before the Jailbird breaks.
+        /// Gets or sets the <see cref="JailbirdWearState"/> for this item.
         /// </summary>
-        /// <remarks>Modifying this value will directly modify <see cref="TotalCharges"/>.</remarks>
-        /// <seealso cref="TotalCharges"/>
-        public int RemainingCharges
+        public JailbirdWearState WearState
         {
-            get => JailbirdItem.ChargesLimit - TotalCharges;
-            set => TotalCharges = Mathf.Clamp(JailbirdItem.ChargesLimit - value, 0, JailbirdItem.ChargesLimit);
+            get => Base._deterioration.WearState;
+            set
+            {
+                if (JailbirdDeteriorationTracker.ReceivedStates.ContainsKey(Serial))
+                    JailbirdDeteriorationTracker.ReceivedStates[Serial] = value;
+                Base._deterioration.RecheckUsage();
+            }
         }
 
         /// <summary>
@@ -119,8 +116,17 @@ namespace Exiled.API.Features.Items
         /// </summary>
         public void Break()
         {
-            Base._broken = true;
-            Base.SendRpc(JailbirdMessageType.Broken);
+            WearState = JailbirdWearState.Broken;
+            using (new AutosyncRpc(Base, true, out NetworkWriter networkWriter))
+            {
+                networkWriter.WriteByte(0);
+                networkWriter.WriteByte((byte)JailbirdWearState.Broken);
+            }
+
+            using (new AutosyncRpc(Base, true, out NetworkWriter networkWriter2))
+            {
+                networkWriter2.WriteByte(1);
+            }
         }
 
         /// <summary>
@@ -140,5 +146,18 @@ namespace Exiled.API.Features.Items
         /// </summary>
         /// <returns>A string containing JailBird-related data.</returns>
         public override string ToString() => $"{Type} ({Serial}) [{Weight}] *{Scale}*";
+
+        /// <inheritdoc/>
+        internal override void ReadPickupInfo(Pickup pickup)
+        {
+            base.ReadPickupInfo(pickup);
+            if (pickup is JailbirdPickup jailbirdPickup)
+            {
+                MeleeDamage = jailbirdPickup.MeleeDamage;
+                ChargeDamage = jailbirdPickup.ChargeDamage;
+                FlashDuration = jailbirdPickup.FlashDuration;
+                Radius = jailbirdPickup.Radius;
+            }
+        }
     }
 }

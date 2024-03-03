@@ -211,9 +211,9 @@ namespace Exiled.API.Enums
         ParticleDisruptor,
 
         /// <summary>
-        /// Damage caused by SCP-956.
+        /// Damage caused by <see cref="EffectType.CardiacArrest"/>.
         /// </summary>
-        Scp956,
+        CardiacArrest,
 
         /// <summary>
         /// Damage caused by <see cref="ItemType.GunCom45"/>.
@@ -224,5 +224,30 @@ namespace Exiled.API.Enums
         /// Damage caused by <see cref="ItemType.Jailbird"/>.
         /// </summary>
         Jailbird,
+
+        /// <summary>
+        /// Damage caused by <see cref="ItemType.GunFRMG0"/>.
+        /// </summary>
+        Frmg0,
+
+        /// <summary>
+        /// Damage caused by <see cref="ItemType.GunA7"/>.
+        /// </summary>
+        A7,
+
+        /// <summary>
+        /// Damage caused by <see cref="RoleTypeId.Scp3114"/>
+        /// </summary>
+        Scp3114,
+
+        /// <summary>
+        /// Damage caused by Scp3114's strangling ability.
+        /// </summary>
+        Strangled,
+
+        /// <summary>
+        /// Damage caused by the marshmallow man.
+        /// </summary>
+        Marshmallow,
     }
 }

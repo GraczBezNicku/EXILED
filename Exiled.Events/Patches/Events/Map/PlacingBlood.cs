@@ -10,13 +10,13 @@ namespace Exiled.Events.Patches.Events.Map
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Map;
 
     using HarmonyLib;
 
     using InventorySystem.Items.Firearms.Modules;
-
-    using NorthwoodLib.Pools;
 
     using UnityEngine;
 
@@ -26,14 +26,15 @@ namespace Exiled.Events.Patches.Events.Map
 
     /// <summary>
     /// Patches <see cref="StandardHitregBase.PlaceBloodDecal(Ray, RaycastHit, IDestructible)"/>.
-    /// Adds the <see cref="PlacingBlood"/> event.
+    /// Adds the <see cref="Handlers.Map.PlacingBlood"/> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Map), nameof(Handlers.Map.PlacingBlood))]
     [HarmonyPatch(typeof(StandardHitregBase), nameof(StandardHitregBase.PlaceBloodDecal))]
     internal static class PlacingBlood
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
@@ -103,7 +104,7 @@ namespace Exiled.Events.Patches.Events.Map
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

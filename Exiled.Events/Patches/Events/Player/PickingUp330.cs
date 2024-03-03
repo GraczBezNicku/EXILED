@@ -10,28 +10,29 @@ namespace Exiled.Events.Patches.Events.Player
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
 
     using InventorySystem.Items.Usables.Scp330;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     using Player = API.Features.Player;
 
     /// <summary>
-    ///     Patches the <see cref="Scp330Bag.ServerProcessPickup" /> method to add the
-    ///     <see cref="Handlers.Player.PickingUpItem" /> event.
+    /// Patches the <see cref="Scp330Bag.ServerProcessPickup" /> method to add the
+    /// <see cref="Handlers.Player.PickingUpItem" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.PickingUpItem))]
     [HarmonyPatch(typeof(Scp330Bag), nameof(Scp330Bag.ServerProcessPickup))]
     internal static class PickingUp330
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             LocalBuilder ev = generator.DeclareLocal(typeof(PickingUpItemEventArgs));
 
@@ -80,7 +81,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

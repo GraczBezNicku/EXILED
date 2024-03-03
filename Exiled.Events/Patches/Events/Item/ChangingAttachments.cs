@@ -12,7 +12,8 @@ namespace Exiled.Events.Patches.Events.Item
 
     using API.Features;
     using API.Features.Items;
-
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Item;
 
     using HarmonyLib;
@@ -21,21 +22,20 @@ namespace Exiled.Events.Patches.Events.Item
 
     using Mirror;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches
-    ///     <see cref="AttachmentsServerHandler.ServerReceiveChangeRequest(NetworkConnection, AttachmentsChangeRequest)" />.
-    ///     Adds the <see cref="Handlers.Item.ChangingAttachments" /> event.
+    /// Patches
+    /// <see cref="AttachmentsServerHandler.ServerReceiveChangeRequest(NetworkConnection, AttachmentsChangeRequest)" />.
+    /// Adds the <see cref="Handlers.Item.ChangingAttachments" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Item), nameof(Handlers.Item.ChangingAttachments))]
     [HarmonyPatch(typeof(AttachmentsServerHandler), nameof(AttachmentsServerHandler.ServerReceiveChangeRequest))]
     internal static class ChangingAttachments
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             const int offset = -3;
             int index = newInstructions.FindLastIndex(instruction => instruction.opcode == OpCodes.Ldc_I4_1) + offset;
@@ -109,7 +109,7 @@ namespace Exiled.Events.Patches.Events.Item
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

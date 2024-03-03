@@ -7,23 +7,18 @@
 
 namespace Exiled.Events.Patches.Events.Player
 {
-    using System.Collections.Generic;
     using System.Reflection;
-    using System.Reflection.Emit;
 
-    using Exiled.API.Features;
+    using API.Features;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
-    using Mirror;
-
-    using NorthwoodLib.Pools;
 
     using PlayerRoles;
     using PlayerRoles.FirstPersonControl;
+    using PlayerRoles.FirstPersonControl.NetworkMessages;
     using PlayerRoles.FirstPersonControl.Spawnpoints;
-    using PlayerRoles.PlayableScps.Scp049;
-    using PlayerRoles.PlayableScps.Subroutines;
 
     using UnityEngine;
 
@@ -33,6 +28,7 @@ namespace Exiled.Events.Patches.Events.Player
     /// Patches <see cref="RoleSpawnpointManager.Init"/> delegate.
     /// Adds the <see cref="Handlers.Player.Spawning"/> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.Spawning))]
     [HarmonyPatch]
     internal static class Spawning
     {
@@ -43,30 +39,36 @@ namespace Exiled.Events.Patches.Events.Player
 
         private static bool Prefix(ReferenceHub hub, PlayerRoleBase prevRole, PlayerRoleBase newRole)
         {
-            if (Player.TryGet(hub, out Player player))
+            if (newRole.ServerSpawnReason != RoleChangeReason.Destroyed && Player.TryGet(hub, out Player player))
             {
                 Vector3 oldPosition = hub.transform.position;
+                float oldRotation = (prevRole as IFpcRole)?.FpcModule.MouseLook.CurrentVertical ?? 0;
+
                 if (newRole is IFpcRole fpcRole)
                 {
                     if (newRole.ServerSpawnFlags.HasFlag(RoleSpawnFlags.UseSpawnpoint) && fpcRole.SpawnpointHandler != null && fpcRole.SpawnpointHandler.TryGetSpawnpoint(out Vector3 position, out float horizontalRot))
                     {
                         oldPosition = position;
-                        fpcRole.FpcModule.MouseLook.CurrentHorizontal = horizontalRot;
+                        oldRotation = horizontalRot;
                     }
 
-                    SpawningEventArgs ev = new(player, oldPosition, prevRole);
+                    SpawningEventArgs ev = new(player, oldPosition, oldRotation, prevRole);
 
                     Handlers.Player.OnSpawning(ev);
 
                     hub.transform.position = ev.Position;
+                    fpcRole.FpcModule.MouseLook.CurrentHorizontal = ev.HorizontalRotation;
+                    hub.connectionToClient.Send(new FpcOverrideMessage(ev.Position, ev.HorizontalRotation), 0);
                 }
                 else
                 {
-                    Handlers.Player.OnSpawning(new(player, oldPosition, prevRole));
+                    Handlers.Player.OnSpawning(new(player, oldPosition, oldRotation, prevRole));
                 }
+
+                return false;
             }
 
-            return false;
+            return true;
         }
     }
 }

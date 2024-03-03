@@ -11,8 +11,10 @@ namespace Exiled.Events.Patches.Events.Item
     using System.Reflection.Emit;
 
     using API.Features;
+    using API.Features.Pools;
 
     using Exiled.Events;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Item;
 
     using Footprinting;
@@ -23,8 +25,6 @@ namespace Exiled.Events.Patches.Events.Item
 
     using InventorySystem.Items.Keycards;
 
-    using NorthwoodLib.Pools;
-
     using UnityEngine;
 
     using static HarmonyLib.AccessTools;
@@ -33,12 +33,13 @@ namespace Exiled.Events.Patches.Events.Item
     /// Patches <see cref="KeycardPickup.ProcessCollision(Collision)"/>.
     /// Adds the <see cref="Handlers.Player.InteractingDoor"/> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.InteractingDoor))]
     [HarmonyPatch(typeof(KeycardPickup), nameof(KeycardPickup.ProcessCollision))]
     internal static class KeycardInteracting
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             LocalBuilder isUnlocked = generator.DeclareLocal(typeof(bool));
             LocalBuilder notEmptyPermissions = generator.DeclareLocal(typeof(bool));
@@ -160,7 +161,7 @@ namespace Exiled.Events.Patches.Events.Item
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

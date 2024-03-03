@@ -12,50 +12,41 @@ namespace Exiled.Events.EventArgs.Player
     using Interfaces;
 
     /// <summary>
-    ///     Contains all information before a spectator changes the spectated player.
+    /// Contains all information before a spectator changes the spectated player.
     /// </summary>
-    public class ChangingSpectatedPlayerEventArgs : IPlayerEvent, IDeniableEvent
+    public class ChangingSpectatedPlayerEventArgs : IPlayerEvent
     {
         /// <summary>
-        ///     Initializes a new instance of the <see cref="ChangingSpectatedPlayerEventArgs" /> class.
+        /// Initializes a new instance of the <see cref="ChangingSpectatedPlayerEventArgs" /> class.
         /// </summary>
         /// <param name="player">
-        ///     <inheritdoc cref="Player" />
+        /// <inheritdoc cref="Player" />
         /// </param>
         /// <param name="oldTarget">
-        ///     <inheritdoc cref="OldTarget" />
+        /// <inheritdoc cref="OldTarget" />
         /// </param>
         /// <param name="newTarget">
-        ///     <inheritdoc cref="NewTarget" />
+        /// <inheritdoc cref="NewTarget" />
         /// </param>
-        /// <param name="isAllowed">
-        ///     <inheritdoc cref="IsAllowed" />
-        /// </param>
-        public ChangingSpectatedPlayerEventArgs(Player player, Player oldTarget, Player newTarget, bool isAllowed)
+        public ChangingSpectatedPlayerEventArgs(ReferenceHub player, uint oldTarget, uint newTarget)
         {
-            Player = player;
-            OldTarget = oldTarget;
-            NewTarget = newTarget;
-            IsAllowed = isAllowed;
+            Player = Player.Get(player);
+            OldTarget = Player.Get(oldTarget);
+            NewTarget = Player.Get(newTarget);
         }
 
         /// <summary>
-        ///     Gets player that was spectated.
+        /// Gets player that was being spectated.
         /// </summary>
         public Player OldTarget { get; }
 
         /// <summary>
-        ///     Gets or sets the player who's going to be spectated.
+        /// Gets the player who's going to be spectated.
         /// </summary>
-        public Player NewTarget { get; set; }
+        public Player NewTarget { get; }
 
         /// <summary>
-        ///     Gets or sets a value indicating whether or not spectated player value can be activated.
-        /// </summary>
-        public bool IsAllowed { get; set; }
-
-        /// <summary>
-        ///     Gets player that is changing spectated player.
+        /// Gets player that is changing spectated player.
         /// </summary>
         public Player Player { get; }
     }

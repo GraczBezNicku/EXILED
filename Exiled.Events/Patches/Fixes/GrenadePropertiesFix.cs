@@ -10,15 +10,14 @@ namespace Exiled.Events.Patches.Fixes
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
-    using Exiled.API.Features.Items;
-    using Exiled.API.Features.Pickups.Projectiles;
+    using API.Features.Items;
+    using API.Features.Pickups.Projectiles;
+    using API.Features.Pools;
 
     using HarmonyLib;
 
     using InventorySystem.Items;
     using InventorySystem.Items.ThrowableProjectiles;
-
-    using NorthwoodLib.Pools;
 
     using UnityEngine;
 
@@ -32,7 +31,7 @@ namespace Exiled.Events.Patches.Fixes
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             LocalBuilder throwable = generator.DeclareLocal(typeof(ThrowableItem));
             LocalBuilder projectile = generator.DeclareLocal(typeof(Projectile));
@@ -40,8 +39,8 @@ namespace Exiled.Events.Patches.Fixes
 
             Label cnt = generator.DefineLabel();
 
-            const int offset = -11;
-            int index = newInstructions.FindIndex(i => i.opcode == OpCodes.Stloc_0) + offset;
+            const int offset = 1;
+            int index = newInstructions.FindLastIndex(i => i.StoresField(Field(typeof(ThrowableItem), nameof(ThrowableItem._alreadyFired)))) + offset;
 
             newInstructions.RemoveRange(index, 11);
 
@@ -104,17 +103,12 @@ namespace Exiled.Events.Patches.Fixes
                 new(OpCodes.Callvirt, PropertyGetter(typeof(ThrownProjectile), nameof(ThrownProjectile.gameObject))),
                 new(OpCodes.Ldc_I4_1),
                 new(OpCodes.Callvirt, Method(typeof(GameObject), nameof(GameObject.SetActive))),
-
-                // projectile.Spawned = true;
-                new(OpCodes.Ldloc_S, projectile.LocalIndex),
-                new(OpCodes.Ldc_I4_1),
-                new(OpCodes.Callvirt, PropertySetter(typeof(Projectile), nameof(Projectile.IsSpawned))),
             });
 
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

@@ -11,9 +11,9 @@ namespace Exiled.API.Features
     using System.Linq;
     using System.Text;
 
-    using MEC;
+    using Exiled.API.Features.Pools;
 
-    using NorthwoodLib.Pools;
+    using MEC;
 
     using PlayerRoles;
 
@@ -35,14 +35,14 @@ namespace Exiled.API.Features
         public static NineTailedFoxAnnouncer Announcer => NineTailedFoxAnnouncer.singleton;
 
         /// <summary>
-        /// Gets a value indicating whether or not C.A.S.S.I.E is currently announcing. Does not include decontamination messages.
+        /// Gets a value indicating whether or not C.A.S.S.I.E is currently announcing. Does not include decontamination or Alpha Warhead Messages.
         /// </summary>
         public static bool IsSpeaking => Announcer.queue.Count != 0;
 
         /// <summary>
         /// Gets a <see cref="IReadOnlyCollection{T}"/> of <see cref="NineTailedFoxAnnouncer.VoiceLine"/> objects that C.A.S.S.I.E recognizes.
         /// </summary>
-        public static IReadOnlyCollection<NineTailedFoxAnnouncer.VoiceLine> VoiceLines => Announcer.voiceLines.ToList().AsReadOnly();
+        public static IReadOnlyCollection<NineTailedFoxAnnouncer.VoiceLine> VoiceLines => Announcer.voiceLines;
 
         /// <summary>
         /// Reproduce a non-glitched C.A.S.S.I.E message.
@@ -64,14 +64,14 @@ namespace Exiled.API.Features
         /// <param name="isSubtitles">Indicates whether C.A.S.S.I.E has to make subtitles.</param>
         public static void MessageTranslated(string message, string translation, bool isHeld = false, bool isNoisy = true, bool isSubtitles = true)
         {
-            StringBuilder announcement = StringBuilderPool.Shared.Rent();
+            StringBuilder announcement = StringBuilderPool.Pool.Get();
             string[] cassies = message.Split('\n');
             string[] translations = translation.Split('\n');
             for (int i = 0; i < cassies.Length; i++)
                 announcement.Append($"{translations[i].Replace(' ', ' ')}<size=0> {cassies[i]} </size><split>");
 
             RespawnEffectsController.PlayCassieAnnouncement(announcement.ToString(), isHeld, isNoisy, isSubtitles);
-            StringBuilderPool.Shared.Return(announcement);
+            StringBuilderPool.Pool.Return(announcement);
         }
 
         /// <summary>
@@ -109,9 +109,10 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="message">The message, which duration will be calculated.</param>
         /// <param name="rawNumber">Determines if a number won't be converted to its full pronunciation.</param>
+        /// <param name="speed">The speed of the message.</param>
         /// <returns>Duration (in seconds) of specified message.</returns>
-        public static float CalculateDuration(string message, bool rawNumber = false)
-            => Announcer.CalculateDuration(message, rawNumber);
+        public static float CalculateDuration(string message, bool rawNumber = false, float speed = 1f)
+            => Announcer.CalculateDuration(message, rawNumber, speed);
 
         /// <summary>
         /// Converts a <see cref="Team"/> into a Cassie-Readable <c>CONTAINMENTUNIT</c>.

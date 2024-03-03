@@ -7,6 +7,8 @@
 
 namespace Exiled.API.Features.Pickups
 {
+    using Exiled.API.Interfaces;
+
     using InventorySystem.Items.Firearms;
 
     using BaseFirearm = InventorySystem.Items.Firearms.FirearmPickup;
@@ -14,7 +16,7 @@ namespace Exiled.API.Features.Pickups
     /// <summary>
     /// A wrapper class for a Firearm pickup.
     /// </summary>
-    public class FirearmPickup : Pickup
+    public class FirearmPickup : Pickup, IWrapper<BaseFirearm>
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="FirearmPickup"/> class.
@@ -34,6 +36,7 @@ namespace Exiled.API.Features.Pickups
             : base(type)
         {
             Base = (BaseFirearm)((Pickup)this).Base;
+            IsDistributed = true;
         }
 
         /// <summary>
@@ -78,7 +81,7 @@ namespace Exiled.API.Features.Pickups
         }
 
         /// <summary>
-        /// Gets or sets a value indicating whether the Attachement code have this <see cref="FirearmPickup"/>.
+        /// Gets or sets a value indicating whether the attachment code have this <see cref="FirearmPickup"/>.
         /// </summary>
         public uint Attachments
         {

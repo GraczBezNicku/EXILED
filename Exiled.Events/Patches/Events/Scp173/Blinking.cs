@@ -11,30 +11,33 @@ namespace Exiled.Events.Patches.Events.Scp173
     using System.Linq;
     using System.Reflection.Emit;
 
-    using Exiled.API.Features;
+    using API.Features;
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Scp173;
 
     using HarmonyLib;
 
-    using NorthwoodLib.Pools;
+    using PlayerRoles;
 
     using PlayerRoles.PlayableScps.Scp173;
-    using PlayerRoles.PlayableScps.Subroutines;
+    using PlayerRoles.Subroutines;
 
     using UnityEngine;
 
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="Scp173BlinkTimer.ServerBlink(Vector3)" />.
-    ///     Adds the <see cref="Handlers.Scp173.Blinking" /> event.
+    /// Patches <see cref="Scp173BlinkTimer.ServerBlink(Vector3)" />.
+    /// Adds the <see cref="Handlers.Scp173.Blinking" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Scp173), nameof(Handlers.Scp173.Blinking))]
     [HarmonyPatch(typeof(Scp173BlinkTimer), nameof(Scp173BlinkTimer.ServerBlink))]
     internal static class Blinking
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             LocalBuilder ev = generator.DeclareLocal(typeof(BlinkingEventArgs));
 
@@ -44,9 +47,10 @@ namespace Exiled.Events.Patches.Events.Scp173
                 0,
                 new[]
                 {
-                    // Player.Get(base.Owner)
+                    // Player.Get(base.Role._lastOwner)
                     new CodeInstruction(OpCodes.Ldarg_0),
-                    new(OpCodes.Call, PropertyGetter(typeof(ScpStandardSubroutine<Scp173Role>), nameof(ScpStandardSubroutine<Scp173Role>.Owner))),
+                    new(OpCodes.Callvirt, PropertyGetter(typeof(SubroutineBase), nameof(SubroutineBase.Role))),
+                    new(OpCodes.Ldfld, Field(typeof(PlayerRoleBase), nameof(PlayerRoleBase._lastOwner))),
                     new(OpCodes.Call, Method(typeof(Player), nameof(Player.Get), new[] { typeof(ReferenceHub) })),
 
                     // this._observers.Observers
@@ -89,7 +93,7 @@ namespace Exiled.Events.Patches.Events.Scp173
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
 
         private static List<Player> GetObservingPlayers(HashSet<ReferenceHub> hubs) => hubs.Select(Player.Get).ToList();

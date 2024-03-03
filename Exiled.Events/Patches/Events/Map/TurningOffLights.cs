@@ -10,24 +10,25 @@ namespace Exiled.Events.Patches.Events.Map
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Map;
 
     using HarmonyLib;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    /// Patches <see cref="FlickerableLightController.ServerFlickerLights"/>.
+    /// Patches <see cref="RoomLightController.ServerFlickerLights"/>.
     /// Adds the <see cref="Handlers.Map.TurningOffLights"/> event.
     /// </summary>
-    [HarmonyPatch(typeof(FlickerableLightController), nameof(FlickerableLightController.ServerFlickerLights))]
+    [EventPatch(typeof(Handlers.Map), nameof(Handlers.Map.TurningOffLights))]
+    [HarmonyPatch(typeof(RoomLightController), nameof(RoomLightController.ServerFlickerLights))]
     internal static class TurningOffLights
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             LocalBuilder ev = generator.DeclareLocal(typeof(TurningOffLightsEventArgs));
 
@@ -71,7 +72,7 @@ namespace Exiled.Events.Patches.Events.Map
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

@@ -8,14 +8,14 @@
 namespace Exiled.API.Features.Items
 {
     using Enums;
+    using Exiled.API.Interfaces;
 
-    using InventorySystem.Items;
     using InventorySystem.Items.Firearms.Ammo;
 
     /// <summary>
     /// A wrapper class for <see cref="AmmoItem"/>.
     /// </summary>
-    public class Ammo : Item
+    public class Ammo : Item, IWrapper<AmmoItem>
     {
         /// <summary>
         /// Gets the absolute maximum amount of ammo that may be held at one time, if ammo is forcefully given to the player (regardless of worn armor or server configuration).

@@ -11,13 +11,12 @@ namespace Exiled.Events.Patches.Events.Player
     using System.Reflection.Emit;
 
     using API.Features;
+    using API.Features.Pools;
     using API.Features.Roles;
-
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
-
-    using NorthwoodLib.Pools;
 
     using PlayerRoles;
 
@@ -26,15 +25,17 @@ namespace Exiled.Events.Patches.Events.Player
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="PlayerStats.KillPlayer(DamageHandlerBase)" />.
-    ///     Adds the <see cref="Handlers.Player.Died" /> event.
+    /// Patches <see cref="PlayerStats.KillPlayer(DamageHandlerBase)" />.
+    /// Adds the <see cref="Handlers.Player.Dying" /> and <see cref="Handlers.Player.Died" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.Dying))]
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.Died))]
     [HarmonyPatch(typeof(PlayerStats), nameof(PlayerStats.KillPlayer))]
     internal static class DyingAndDied
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label ret = generator.DefineLabel();
 
@@ -51,6 +52,8 @@ namespace Exiled.Events.Patches.Events.Player
                     new(OpCodes.Call, Method(typeof(Player), nameof(Player.Get), new[] { typeof(ReferenceHub) })),
                     new(OpCodes.Dup),
                     new(OpCodes.Stloc_S, player.LocalIndex),
+                    new(OpCodes.Brfalse_S, ret),
+                    new(OpCodes.Ldloc_S, player),
 
                     // handler
                     new(OpCodes.Ldarg_1),
@@ -99,7 +102,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

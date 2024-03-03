@@ -7,18 +7,20 @@
 
 namespace Exiled.API.Features
 {
+    using System;
     using System.Collections.Generic;
+    using System.Linq;
 
     using DamageHandlers;
-
     using Enums;
-
+    using Exiled.API.Features.Doors;
+    using Exiled.API.Interfaces;
     using UnityEngine;
 
     /// <summary>
     /// A wrapper class for <see cref="BreakableWindow"/>.
     /// </summary>
-    public class Window
+    public class Window : IWrapper<BreakableWindow>, IWorldSpace
     {
         /// <summary>
         /// A <see cref="Dictionary{TKey,TValue}"/> containing all known <see cref="BreakableWindow"/>s and their corresponding <see cref="Window"/>.
@@ -29,18 +31,23 @@ namespace Exiled.API.Features
         /// Initializes a new instance of the <see cref="Window"/> class.
         /// </summary>
         /// <param name="window">The base <see cref="BreakableWindow"/> for this door.</param>
-        public Window(BreakableWindow window)
+        /// <param name="room">The <see cref="Room"/> for this window.</param>
+        internal Window(BreakableWindow window, Room room)
         {
             BreakableWindowToWindow.Add(window, this);
             Base = window;
-            Room = window.GetComponentInParent<Room>();
+            Room = room;
             Type = GetGlassType();
+#if Debug
+            if (Type is GlassType.Unknown)
+                Log.Error($"[GLASSTYPE UNKNOWN] {this}");
+#endif
         }
 
         /// <summary>
         /// Gets a <see cref="IEnumerable{T}"/> of <see cref="Door"/> which contains all the <see cref="Door"/> instances.
         /// </summary>
-        public static IEnumerable<Window> List => BreakableWindowToWindow.Values;
+        public static IReadOnlyCollection<Window> List => BreakableWindowToWindow.Values;
 
         /// <summary>
         /// Gets the base-game <see cref="BreakableWindow"/> for this window.
@@ -147,7 +154,38 @@ namespace Exiled.API.Features
         /// <returns>A <see cref="Door"/> wrapper object.</returns>
         public static Window Get(BreakableWindow breakableWindow) => BreakableWindowToWindow.TryGetValue(breakableWindow, out Window window)
             ? window
-            : new(breakableWindow);
+            : new(breakableWindow, breakableWindow.GetComponentInParent<Room>());
+
+        /// <summary>
+        /// Gets a <see cref="IEnumerable{T}"/> of <see cref="Window"/> filtered based on a predicate.
+        /// </summary>
+        /// <param name="predicate">The condition to satify.</param>
+        /// <returns>A <see cref="IEnumerable{T}"/> of <see cref="Window"/> which contains elements that satify the condition.</returns>
+        public static IEnumerable<Window> Get(Func<Window, bool> predicate) => List.Where(predicate);
+
+        /// <summary>
+        /// Try-get a <see cref="Window"/> belonging to the <see cref="BreakableWindow"/>, if any.
+        /// </summary>
+        /// <param name="breakableWindow">The <see cref="BreakableWindow"/> instance.</param>
+        /// <param name="window">A <see cref="Window"/> or <see langword="null"/> if not found.</param>
+        /// <returns>Whether or not a window was found.</returns>
+        public static bool TryGet(BreakableWindow breakableWindow, out Window window)
+        {
+            window = Get(breakableWindow);
+            return window is not null;
+        }
+
+        /// <summary>
+        /// Try-get a <see cref="IEnumerable{T}"/> of <see cref="Window"/> filtered based on a predicate.
+        /// </summary>
+        /// <param name="predicate">The condition to satify.</param>
+        /// <param name="windows">A <see cref="IEnumerable{T}"/> of <see cref="Window"/> which contains elements that satify the condition.</param>
+        /// <returns>Whether or not at least one window was found.</returns>
+        public static bool TryGet(Func<Window, bool> predicate, out IEnumerable<Window> windows)
+        {
+            windows = Get(predicate);
+            return windows.Any();
+        }
 
         /// <summary>
         /// Break the window.

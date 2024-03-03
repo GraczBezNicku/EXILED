@@ -12,19 +12,23 @@ namespace Exiled.API.Features
     using System.Linq;
 
     using Exiled.API.Enums;
-
+    using Exiled.API.Extensions;
+    using Exiled.API.Features.Doors;
+    using Exiled.API.Features.Pools;
+    using Exiled.API.Interfaces;
     using Interactables.Interobjects;
     using Interactables.Interobjects.DoorUtils;
-
     using UnityEngine;
 
     using static Interactables.Interobjects.ElevatorChamber;
     using static Interactables.Interobjects.ElevatorManager;
 
+    using Elevator = Interactables.Interobjects.ElevatorDoor;
+
     /// <summary>
     /// The in-game lift.
     /// </summary>
-    public class Lift
+    public class Lift : IWrapper<ElevatorChamber>, IWorldSpace
     {
         /// <summary>
         /// A <see cref="Dictionary{TKey,TValue}"/> containing all known <see cref="ElevatorChamber"/>s and their corresponding <see cref="Lift"/>.
@@ -34,7 +38,7 @@ namespace Exiled.API.Features
         /// <summary>
         /// Internal list that contains all ElevatorDoor for current group.
         /// </summary>
-        private readonly List<ElevatorDoor> internalDoorsList = new();
+        private readonly List<Elevator> internalDoorsList = ListPool<Elevator>.Pool.Get();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Lift"/> class.
@@ -45,20 +49,24 @@ namespace Exiled.API.Features
             Base = elevator;
             ElevatorChamberToLift.Add(elevator, this);
 
-            foreach (ElevatorDoor door in ElevatorDoor.AllElevatorDoors.First(elevator => elevator.Key == Base.AssignedGroup).Value)
-                internalDoorsList.Add(door);
+            internalDoorsList.AddRange(Interactables.Interobjects.ElevatorDoor.AllElevatorDoors[Group]);
         }
+
+        /// <summary>
+        /// Finalizes an instance of the <see cref="Lift"/> class.
+        /// </summary>
+        ~Lift() => ListPool<Elevator>.Pool.Return(internalDoorsList);
 
         /// <summary>
         /// Gets a <see cref="IEnumerable{T}"/> of <see cref="Lift"/> which contains all the <see cref="Lift"/> instances.
         /// </summary>
-        public static IEnumerable<Lift> List => ElevatorChamberToLift.Values;
+        public static IReadOnlyCollection<Lift> List => ElevatorChamberToLift.Values;
 
         /// <summary>
         /// Gets a random <see cref="Lift"/>.
         /// </summary>
         /// <returns><see cref="Lift"/> object.</returns>
-        public static Lift Random => List.ToArray()[UnityEngine.Random.Range(0, ElevatorChamberToLift.Count)];
+        public static Lift Random => List.GetRandomValue();
 
         /// <summary>
         /// Gets the base <see cref="ElevatorChamber"/>.
@@ -68,12 +76,17 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets a value of the internal doors list.
         /// </summary>
-        public IReadOnlyCollection<ElevatorDoor> Doors => internalDoorsList;
+        public IReadOnlyCollection<Doors.ElevatorDoor> Doors => internalDoorsList.Select(x => Door.Get(x).As<Doors.ElevatorDoor>()).ToList();
+
+        /// <summary>
+        /// Gets a <see cref="IEnumerable{T}"/> of <see cref="Player"/> in the <see cref="Room"/>.
+        /// </summary>
+        public IEnumerable<Player> Players => Player.List.Where(x => Bounds.Contains(x.Position));
 
         /// <summary>
         /// Gets the lift's name.
         /// </summary>
-        public string Name => Base.AssignedGroup.ToString();
+        public string Name => Group.ToString();
 
         /// <summary>
         /// Gets the <see cref="UnityEngine.GameObject"/> of the lift.
@@ -113,9 +126,14 @@ namespace Exiled.API.Features
         }
 
         /// <summary>
+        /// Gets the <see cref="UnityEngine.Bounds"/> representing the space inside the lift.
+        /// </summary>
+        public Bounds Bounds => Base.WorldspaceBounds;
+
+        /// <summary>
         /// Gets the lift's <see cref="ElevatorType"/>.
         /// </summary>
-        public ElevatorType Type => Base.AssignedGroup switch
+        public ElevatorType Type => Group switch
         {
             ElevatorGroup.Scp049 => ElevatorType.Scp049,
             ElevatorGroup.GateA => ElevatorType.GateA,
@@ -139,7 +157,7 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets a value indicating whether the lift is currently moving.
         /// </summary>
-        public bool IsMoving => Status == ElevatorSequence.MovingAway || Status == ElevatorSequence.Arriving;
+        public bool IsMoving => Status is ElevatorSequence.MovingAway or ElevatorSequence.Arriving;
 
         /// <summary>
         /// Gets a value indicating whether the lift is locked.
@@ -156,6 +174,26 @@ namespace Exiled.API.Features
         }
 
         /// <summary>
+        /// Gets the <see cref="RotationTime"/>.
+        /// </summary>
+        public float RotationTime => Base._rotationTime;
+
+        /// <summary>
+        /// Gets the <see cref="DoorOpenTime"/>.
+        /// </summary>
+        public float DoorOpenTime => Base._doorOpenTime;
+
+        /// <summary>
+        /// Gets the <see cref="DoorCloseTime"/>.
+        /// </summary>
+        public float DoorCloseTime => Base._doorCloseTime;
+
+        /// <summary>
+        /// Gets the total <see cref="MoveTime"/>.
+        /// </summary>
+        public float MoveTime => AnimationTime + RotationTime + DoorOpenTime + DoorCloseTime;
+
+        /// <summary>
         /// Gets the <see cref="CurrentLevel"/>.
         /// </summary>
         public int CurrentLevel => Base.CurrentLevel;
@@ -163,23 +201,7 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets the <see cref="CurrentDestination"/>.
         /// </summary>
-        public ElevatorDoor CurrentDestination => Base.CurrentDestination;
-
-        /// <summary>
-        /// Compares two operands: <see cref="Lift"/> and <see cref="Lift"/>.
-        /// </summary>
-        /// <param name="left">The first <see cref="Lift"/> to compare.</param>
-        /// <param name="right">The second <see cref="Lift"/> to compare.</param>
-        /// <returns><see langword="true"/> if the values are equal.</returns>
-        public static bool operator ==(Lift left, Lift right) => left.Base.Equals(right.Base);
-
-        /// <summary>
-        /// Compares two operands: <see cref="Lift"/> and <see cref="Lift"/>.
-        /// </summary>
-        /// <param name="left">The first <see cref="Lift"/> to compare.</param>
-        /// <param name="right">The second <see cref="Lift"/> to compare.</param>
-        /// <returns><see langword="true"/> if the values are not equal.</returns>
-        public static bool operator !=(Lift left, Lift right) => !(left == right);
+        public Doors.ElevatorDoor CurrentDestination => Door.Get(Base.CurrentDestination).As<Doors.ElevatorDoor>();
 
         /// <summary>
         /// Gets a <see cref="IEnumerable{T}"/> of <see cref="Lift"/> which contains all the <see cref="Lift"/> instances from the specified <see cref="Status"/>.
@@ -217,6 +239,13 @@ namespace Exiled.API.Features
         public static Lift Get(GameObject gameObject) => Get(lift => lift.GameObject == gameObject).FirstOrDefault();
 
         /// <summary>
+        /// Gets the <see cref="Lift"/> belonging to the <see cref="Vector3"/>, if any.
+        /// </summary>
+        /// <param name="position">The <see cref="Vector3"/>.</param>
+        /// <returns>A <see cref="Lift"/> or <see langword="null"/> if not found.</returns>
+        public static Lift Get(Vector3 position) => Get(lift => lift.Bounds.Contains(position)).FirstOrDefault();
+
+        /// <summary>
         /// Gets a <see cref="IEnumerable{T}"/> of <see cref="Lift"/> filtered based on a predicate.
         /// </summary>
         /// <param name="predicate">The condition to satify.</param>
@@ -245,7 +274,7 @@ namespace Exiled.API.Features
         /// <param name="level">The destination level.</param>
         /// <param name="isForced">Indicates whether the start will be forced or not.</param>
         /// <returns><see langword="true"/> if the lift was started successfully; otherwise, <see langword="false"/>.</returns>
-        public bool TryStart(int level, bool isForced = false) => TrySetDestination(Base.AssignedGroup, level, isForced);
+        public bool TryStart(int level, bool isForced = false) => TrySetDestination(Group, level, isForced);
 
         /// <summary>
         /// Changes lock of the lift.
@@ -255,31 +284,32 @@ namespace Exiled.API.Features
         {
             bool forceLock = lockReason != DoorLockReason.None;
 
-            foreach (ElevatorDoor door in Doors)
+            foreach (Doors.ElevatorDoor door in Doors)
             {
                 if (!forceLock)
                 {
-                    door.NetworkActiveLocks = 0;
+                    door.DoorLockType = 0;
 
-                    door.ServerChangeLock(DoorLockReason.None, true);
+                    door.ChangeLock(DoorLockType.None);
                 }
                 else
                 {
-                    door.ServerChangeLock(lockReason, true);
+                    door.ChangeLock((DoorLockType)lockReason);
 
                     if (CurrentLevel != 1)
                         TrySetDestination(Group, 1, true);
                 }
 
-                Base.RefreshLocks(Group, door);
+                Base.RefreshLocks(Group, door.Base);
             }
         }
 
-        /// <inheritdoc/>
-        public override bool Equals(object obj) => Base.Equals(obj);
-
-        /// <inheritdoc/>
-        public override int GetHashCode() => Base.GetHashCode();
+        /// <summary>
+        /// Returns whether or not the provided <see cref="Vector3">position</see> is inside the lift.
+        /// </summary>
+        /// <param name="point">The position.</param>
+        /// <returns><see langword="true"/> if the point is inside the elevator. Otherwise, <see langword="false"/>.</returns>
+        public bool IsInElevator(Vector3 point) => Bounds.Contains(point);
 
         /// <summary>
         /// Returns the Lift in a human-readable format.

@@ -8,13 +8,14 @@
 namespace Exiled.API.Features.Pickups.Projectiles
 {
     using Exiled.API.Enums;
+    using Exiled.API.Interfaces;
 
     using InventorySystem.Items.ThrowableProjectiles;
 
     /// <summary>
     /// A wrapper class for FlashbangGrenade.
     /// </summary>
-    public class FlashbangProjectile : EffectGrenadeProjectile
+    public class FlashbangProjectile : EffectGrenadeProjectile, IWrapper<FlashbangGrenade>
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="FlashbangProjectile"/> class.
@@ -59,7 +60,7 @@ namespace Exiled.API.Features.Pickups.Projectiles
         }
 
         /// <summary>
-        /// Gets or sets the how mush the FlashBang going to be intensified when explode at <see cref="RoomType.Surface"/>.
+        /// Gets or sets the how much the flashbang going to be intensified when exploding on <see cref="RoomType.Surface"/>.
         /// </summary>
         public float SurfaceDistanceIntensifier
         {

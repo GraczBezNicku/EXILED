@@ -7,32 +7,33 @@
 
 namespace Exiled.Events.Patches.Events.Player
 {
-#pragma warning disable SA1600
-
     using System.Collections.Generic;
     using System.Reflection.Emit;
     using System.Runtime.CompilerServices;
 
     using API.Features;
-
+    using API.Features.Pools;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
-
-    using NorthwoodLib.Pools;
 
     using UnityEngine;
 
     using static HarmonyLib.AccessTools;
 
+    /// <summary>
+    /// Patch the <see cref="ReferenceHub.OnDestroy" />.
+    /// Adds the <see cref="Handlers.Player.Destroying" /> event.
+    /// </summary>
     [HarmonyPatch(typeof(ReferenceHub), nameof(ReferenceHub.OnDestroy))]
     internal static class Destroying
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label continueLabel = generator.DefineLabel();
+            Label jmp = generator.DefineLabel();
 
             LocalBuilder player = generator.DeclareLocal(typeof(Player));
 
@@ -54,8 +55,21 @@ namespace Exiled.Events.Patches.Events.Player
                     new(OpCodes.Ceq),
                     new(OpCodes.Brtrue_S, continueLabel),
 
-                    // DestroyingEventArgs ev = new(Player)
+                    // if (player.IsVerified)
+                    //  goto jmp
                     new(OpCodes.Ldloc_S, player.LocalIndex),
+                    new(OpCodes.Callvirt, PropertyGetter(typeof(Player), nameof(Player.IsVerified))),
+                    new(OpCodes.Brtrue_S, jmp),
+
+                    // if (!player.IsNpc)
+                    //  goto continueLabel;
+                    new(OpCodes.Ldloc_S, player.LocalIndex),
+                    new(OpCodes.Callvirt, PropertyGetter(typeof(Player), nameof(Player.IsNPC))),
+                    new(OpCodes.Brfalse_S, continueLabel),
+
+                    // jmp:
+                    // DestroyingEventArgs ev = new(Player)
+                    new CodeInstruction(OpCodes.Ldloc_S, player.LocalIndex).WithLabels(jmp),
                     new(OpCodes.Newobj, GetDeclaredConstructors(typeof(DestroyingEventArgs))[0]),
 
                     // Handlers.Player.OnDestroying(ev)
@@ -68,17 +82,11 @@ namespace Exiled.Events.Patches.Events.Player
                     new(OpCodes.Callvirt, Method(typeof(Dictionary<GameObject, Player>), nameof(Dictionary<GameObject, Player>.Remove), new[] { typeof(GameObject) })),
                     new(OpCodes.Pop),
 
-                    // Player.UnverifiedPlayers.Remove(this)
+                    // Player.UnverifiedPlayers.Remove(this.gameObject)
                     new(OpCodes.Call, PropertyGetter(typeof(Player), nameof(Player.UnverifiedPlayers))),
                     new(OpCodes.Ldarg_0),
+                    new(OpCodes.Call, PropertyGetter(typeof(ReferenceHub), nameof(ReferenceHub.gameObject))),
                     new(OpCodes.Callvirt, Method(typeof(ConditionalWeakTable<ReferenceHub, Player>), nameof(ConditionalWeakTable<ReferenceHub, Player>.Remove), new[] { typeof(ReferenceHub) })),
-                    new(OpCodes.Pop),
-
-                    // Player.IdsCache.Remove(player.Id)
-                    new(OpCodes.Call, PropertyGetter(typeof(Player), nameof(Player.IdsCache))),
-                    new(OpCodes.Ldloc_S, player.LocalIndex),
-                    new(OpCodes.Callvirt, PropertyGetter(typeof(Player), nameof(Player.Id))),
-                    new(OpCodes.Callvirt, Method(typeof(Dictionary<int, Player>), nameof(Dictionary<int, Player>.Remove), new[] { typeof(int) })),
                     new(OpCodes.Pop),
 
                     // if (player.UserId == null)
@@ -100,7 +108,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

@@ -10,6 +10,8 @@ namespace Exiled.Events.Patches.Events.Player
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using Handlers;
@@ -18,20 +20,19 @@ namespace Exiled.Events.Patches.Events.Player
 
     using InventorySystem.Items.Firearms.Attachments;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patch the <see cref="WorkstationController.NetworkStatus" />.
-    ///     Adds the <see cref="Player.DeactivatingWorkstation" /> event.
+    /// Patch the <see cref="WorkstationController.NetworkStatus" />.
+    /// Adds the <see cref="Player.DeactivatingWorkstation" /> event.
     /// </summary>
+    [EventPatch(typeof(Player), nameof(Player.DeactivatingWorkstation))]
     [HarmonyPatch(typeof(WorkstationController), nameof(WorkstationController.NetworkStatus), MethodType.Setter)]
     internal static class DeactivatingWorkstation
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
             Label continueLabel = generator.DefineLabel();
@@ -84,7 +85,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

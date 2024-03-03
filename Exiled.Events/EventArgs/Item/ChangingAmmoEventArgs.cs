@@ -14,24 +14,23 @@ namespace Exiled.Events.EventArgs.Item
     /// <summary>
     /// Contains all information before changing firearm ammo.
     /// </summary>
-    public class ChangingAmmoEventArgs : IPlayerEvent, IFirearmEvent
+    public class ChangingAmmoEventArgs : IPlayerEvent, IFirearmEvent, IDeniableEvent
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="ChangingAmmoEventArgs"/> class.
         /// </summary>
-        /// <param name="player"><inheritdoc cref="Player"/></param>
         /// <param name="firearm"><inheritdoc cref="Firearm"/></param>
         /// <param name="oldAmmo"><inheritdoc cref="OldAmmo"/></param>
         /// <param name="newAmmo"><inheritdoc cref="NewAmmo"/></param>
         /// <param name="isAllowed"><inheritdoc cref="IsAllowed"/></param>
-        public ChangingAmmoEventArgs(Player player, InventorySystem.Items.ItemBase firearm, byte oldAmmo, byte newAmmo, bool isAllowed = true)
+        public ChangingAmmoEventArgs(InventorySystem.Items.ItemBase firearm, byte oldAmmo, byte newAmmo, bool isAllowed = true)
         {
             Item item = Item.Get(firearm);
 
             if (item is not Firearm firearmItem)
                 return;
 
-            Player = player;
+            Player = firearmItem.Owner;
             Firearm = firearmItem;
             OldAmmo = oldAmmo;
             NewAmmo = newAmmo;
@@ -44,9 +43,12 @@ namespace Exiled.Events.EventArgs.Item
         public Player Player { get; }
 
         /// <summary>
-        /// Gets the <see cref="API.Features.Items.Firearm"/> the ammo is being changed to.
+        /// Gets the <see cref="API.Features.Items.Firearm"/> the ammo type is being changed to.
         /// </summary>
         public Firearm Firearm { get; }
+
+        /// <inheritdoc/>
+        public Item Item => Firearm;
 
         /// <summary>
         /// Gets the old ammo.

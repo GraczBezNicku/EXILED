@@ -10,28 +10,29 @@ namespace Exiled.Events.Patches.Events.Scp173
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
-    using Exiled.API.Features;
+    using API.Features;
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Scp173;
 
     using HarmonyLib;
 
-    using NorthwoodLib.Pools;
-
     using PlayerRoles.PlayableScps.Scp173;
-    using PlayerRoles.PlayableScps.Subroutines;
+    using PlayerRoles.Subroutines;
 
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="Scp173BreakneckSpeedsAbility.IsActive" />.
-    ///     Adds the <see cref="Handlers.Scp173.UsingBreakneckSpeeds" /> event.
+    /// Patches <see cref="Scp173BreakneckSpeedsAbility.IsActive" />.
+    /// Adds the <see cref="Handlers.Scp173.UsingBreakneckSpeeds" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Scp173), nameof(Handlers.Scp173.UsingBreakneckSpeeds))]
     [HarmonyPatch(typeof(Scp173BreakneckSpeedsAbility), nameof(Scp173BreakneckSpeedsAbility.IsActive), MethodType.Setter)]
     internal static class UsingBreakneckSpeeds
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
@@ -49,8 +50,8 @@ namespace Exiled.Events.Patches.Events.Scp173
                 new CodeInstruction[]
                 {
                     // Player.Get(base.Owner)
-                    new(OpCodes.Ldarg_0),
-                    new(OpCodes.Call, PropertyGetter(typeof(ScpStandardSubroutine<Scp173Role>), nameof(ScpStandardSubroutine<Scp173Role>.Owner))),
+                    new CodeInstruction(OpCodes.Ldarg_0).MoveLabelsFrom(newInstructions[index]),
+                    new(OpCodes.Call, PropertyGetter(typeof(StandardSubroutine<Scp173Role>), nameof(StandardSubroutine<Scp173Role>.Owner))),
                     new(OpCodes.Call, Method(typeof(Player), nameof(Player.Get), new[] { typeof(ReferenceHub) })),
 
                     // this.Cooldown.Remaining == 0
@@ -78,7 +79,7 @@ namespace Exiled.Events.Patches.Events.Scp173
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

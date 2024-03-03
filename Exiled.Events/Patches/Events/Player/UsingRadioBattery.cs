@@ -11,27 +11,27 @@ namespace Exiled.Events.Patches.Events.Player
     using System.Reflection.Emit;
 
     using API.Features;
-
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
 
     using InventorySystem.Items.Radio;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="RadioItem.Update" />.
-    ///     Adds the <see cref="Handlers.Player.UsingRadioBattery" /> event.
+    /// Patches <see cref="RadioItem.Update" />.
+    /// Adds the <see cref="Handlers.Player.UsingRadioBattery" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.UsingRadioBattery))]
     [HarmonyPatch(typeof(RadioItem), nameof(RadioItem.Update))]
     internal static class UsingRadioBattery
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = newInstructions[newInstructions.Count - 1].labels[0];
             Label continueLabel = generator.DefineLabel();
@@ -39,8 +39,8 @@ namespace Exiled.Events.Patches.Events.Player
             LocalBuilder ev = generator.DeclareLocal(typeof(UsingRadioBatteryEventArgs));
             LocalBuilder player = generator.DeclareLocal(typeof(Player));
 
-            const int offset = -4;
-            int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Ldloc_0) + offset;
+            const int offset = 1;
+            int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Stloc_0) + offset;
 
             newInstructions[index].WithLabels(continueLabel);
 
@@ -92,7 +92,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

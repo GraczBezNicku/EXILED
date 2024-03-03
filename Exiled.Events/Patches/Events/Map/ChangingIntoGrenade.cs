@@ -10,6 +10,8 @@ namespace Exiled.Events.Patches.Events.Map
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Map;
 
     using Handlers;
@@ -22,31 +24,29 @@ namespace Exiled.Events.Patches.Events.Map
 
     using Mirror;
 
-    using NorthwoodLib.Pools;
-
     using UnityEngine;
 
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="TimedGrenadePickup.Update" />.
-    ///     Adds the <see cref="Map.ChangingIntoGrenade" /> event.
+    /// Patches <see cref="TimedGrenadePickup.Update" />.
+    /// Adds the <see cref="Map.ChangingIntoGrenade" /> and <see cref="Map.ChangedIntoGrenade" /> events.
     /// </summary>
+    [EventPatch(typeof(Map), nameof(Map.ChangingIntoGrenade))]
+    [EventPatch(typeof(Map), nameof(Map.ChangedIntoGrenade))]
     [HarmonyPatch(typeof(TimedGrenadePickup), nameof(TimedGrenadePickup.Update))]
     internal static class ChangingIntoGrenade
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             // Extract the existing label we will be removing.
             Label returnLabel = generator.DefineLabel();
-            Label skipFuse = generator.DefineLabel();
             Label dontResetLabel = generator.DefineLabel();
 
             LocalBuilder changingIntoGrenade = generator.DeclareLocal(typeof(ChangingIntoGrenadeEventArgs));
             LocalBuilder changedIntoGrenade = generator.DeclareLocal(typeof(ChangedIntoGrenadeEventArgs));
-            LocalBuilder timeGrenade = generator.DeclareLocal(typeof(TimeGrenade));
             LocalBuilder thrownProjectile = generator.DeclareLocal(typeof(ThrownProjectile));
 
             int offset = 1;
@@ -118,26 +118,12 @@ namespace Exiled.Events.Patches.Events.Map
                 // thrownProjectile
                 new(OpCodes.Ldloc_S, thrownProjectile.LocalIndex),
 
-                // var ev = new ChangedIntoGrenadeEventArgs(timedGrenadePickup, thrownProjectile);
+                // ChangedIntoGrenadeEventArgs ev = new(timedGrenadePickup, thrownProjectile);
                 // Map.OnChangingIntoGrenade(ev);
                 new(OpCodes.Newobj, GetDeclaredConstructors(typeof(ChangedIntoGrenadeEventArgs))[0]),
                 new(OpCodes.Dup),
                 new(OpCodes.Call, Method(typeof(Map), nameof(Map.OnChangedIntoGrenade))),
                 new(OpCodes.Stloc_S, changedIntoGrenade.LocalIndex),
-
-                // if (thrownProjectile is TimeGrenade timeGrenade)
-                //    timeGrenade._fuseTime = ev.FuseTime;
-                new(OpCodes.Ldloc_S, thrownProjectile.LocalIndex),
-                new(OpCodes.Isinst, typeof(TimeGrenade)),
-                new(OpCodes.Dup),
-                new(OpCodes.Stloc_S, timeGrenade.LocalIndex),
-                new(OpCodes.Brfalse_S, skipFuse),
-
-                new(OpCodes.Ldloc_S, timeGrenade.LocalIndex),
-                new(OpCodes.Ldloc_S, changedIntoGrenade.LocalIndex),
-                new(OpCodes.Callvirt, PropertyGetter(typeof(ChangedIntoGrenadeEventArgs), nameof(ChangedIntoGrenadeEventArgs.FuseTime))),
-                new(OpCodes.Stfld, Field(typeof(TimeGrenade), nameof(TimeGrenade._fuseTime))),
-                new CodeInstruction(OpCodes.Nop).WithLabels(skipFuse),
             });
 
             newInstructions[newInstructions.Count - 1].labels.Add(returnLabel);
@@ -145,7 +131,7 @@ namespace Exiled.Events.Patches.Events.Map
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

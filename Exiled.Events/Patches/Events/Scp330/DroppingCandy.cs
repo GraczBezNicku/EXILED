@@ -10,6 +10,8 @@ namespace Exiled.Events.Patches.Events.Scp330
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Scp330;
 
     using Handlers;
@@ -21,22 +23,21 @@ namespace Exiled.Events.Patches.Events.Scp330
 
     using Mirror;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     using Player = API.Features.Player;
 
     /// <summary>
-    ///     Patches the <see cref="Scp330NetworkHandler.ServerSelectMessageReceived(NetworkConnection, SelectScp330Message)" /> method to add the
-    ///     <see cref="Scp330.DroppingScp330" /> event.
+    /// Patches the <see cref="Scp330NetworkHandler.ServerSelectMessageReceived(NetworkConnection, SelectScp330Message)" /> method to add the
+    /// <see cref="Scp330.DroppingScp330" /> event.
     /// </summary>
+    [EventPatch(typeof(Scp330), nameof(Scp330.DroppingScp330))]
     [HarmonyPatch(typeof(Scp330NetworkHandler), nameof(Scp330NetworkHandler.ServerSelectMessageReceived))]
     internal static class DroppingCandy
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
@@ -105,7 +106,7 @@ namespace Exiled.Events.Patches.Events.Scp330
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

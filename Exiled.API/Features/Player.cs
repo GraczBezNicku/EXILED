@@ -14,29 +14,23 @@ namespace Exiled.API.Features
     using System.Runtime.CompilerServices;
 
     using Core;
-
     using CustomPlayerEffects;
-
     using DamageHandlers;
-
     using Enums;
-
     using Exiled.API.Features.Core.Interfaces;
+    using Exiled.API.Features.Doors;
+    using Exiled.API.Features.Hazards;
     using Exiled.API.Features.Items;
     using Exiled.API.Features.Pickups;
+    using Exiled.API.Features.Pools;
     using Exiled.API.Features.Roles;
+    using Exiled.API.Interfaces;
     using Exiled.API.Structs;
-
     using Extensions;
-
     using Footprinting;
-
     using global::Scp914;
-
     using Hints;
-
     using Interactables.Interobjects;
-
     using InventorySystem;
     using InventorySystem.Disarming;
     using InventorySystem.Items;
@@ -46,36 +40,26 @@ namespace Exiled.API.Features
     using InventorySystem.Items.Firearms.BasicMessages;
     using InventorySystem.Items.Usables;
     using InventorySystem.Items.Usables.Scp330;
-
     using MapGeneration.Distributors;
-
     using MEC;
-
     using Mirror;
     using Mirror.LiteNetLib4Mirror;
-
     using NorthwoodLib;
-    using NorthwoodLib.Pools;
-
     using PlayerRoles;
     using PlayerRoles.FirstPersonControl;
-    using PlayerRoles.PlayableScps.Scp079;
-    using PlayerRoles.PlayableScps.Scp106;
-    using PlayerRoles.PlayableScps.Scp173;
-    using PlayerRoles.PlayableScps.Scp939;
+    using PlayerRoles.RoleAssign;
     using PlayerRoles.Spectating;
     using PlayerRoles.Voice;
-
     using PlayerStatsSystem;
+    using PluginAPI.Core;
 
+    using RelativePositioning;
     using RemoteAdmin;
-
+    using Respawning.NamingRules;
     using RoundRestarting;
-
     using UnityEngine;
-
+    using Utils;
     using Utils.Networking;
-
     using VoiceChat;
     using VoiceChat.Playbacks;
 
@@ -83,14 +67,13 @@ namespace Exiled.API.Features
 
     using DamageHandlerBase = PlayerStatsSystem.DamageHandlerBase;
     using Firearm = Items.Firearm;
-    using FirearmPickup = Exiled.API.Features.Pickups.FirearmPickup;
+    using FirearmPickup = Pickups.FirearmPickup;
     using HumanRole = Roles.HumanRole;
-    using Random = UnityEngine.Random;
 
     /// <summary>
     /// Represents the in-game player, by encapsulating a <see cref="global::ReferenceHub"/>.
     /// </summary>
-    public class Player : IEntity
+    public class Player : TypeCastObject<Player>, IEntity, IWorldSpace
     {
 #pragma warning disable SA1401
         /// <summary>
@@ -99,7 +82,6 @@ namespace Exiled.API.Features
         internal readonly List<Item> ItemsValue = new(8);
 #pragma warning restore SA1401
 
-        private readonly IReadOnlyCollection<Item> readOnlyItems;
         private readonly HashSet<EActor> componentsInChildren = new();
 
         private ReferenceHub referenceHub;
@@ -112,8 +94,8 @@ namespace Exiled.API.Features
         /// <param name="referenceHub">The <see cref="global::ReferenceHub"/> of the player to be encapsulated.</param>
         public Player(ReferenceHub referenceHub)
         {
-            readOnlyItems = ItemsValue.AsReadOnly();
             ReferenceHub = referenceHub;
+            Items = ItemsValue.AsReadOnly();
         }
 
         /// <summary>
@@ -122,8 +104,18 @@ namespace Exiled.API.Features
         /// <param name="gameObject">The <see cref="UnityEngine.GameObject"/> of the player.</param>
         public Player(GameObject gameObject)
         {
-            readOnlyItems = ItemsValue.AsReadOnly();
             ReferenceHub = ReferenceHub.GetHub(gameObject);
+            Items = ItemsValue.AsReadOnly();
+        }
+
+        /// <summary>
+        /// Finalizes an instance of the <see cref="Player"/> class.
+        /// </summary>
+        ~Player()
+        {
+            DictionaryPool<string, object>.Pool.Return(SessionVariables);
+            DictionaryPool<RoleTypeId, float>.Pool.Return(FriendlyFireMultiplier);
+            DictionaryPool<string, Dictionary<RoleTypeId, float>>.Pool.Return(CustomRoleFriendlyFireMultiplier);
         }
 
         /// <summary>
@@ -134,17 +126,12 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets a list of all <see cref="Player"/>'s on the server.
         /// </summary>
-        public static IEnumerable<Player> List => Dictionary.Values;
+        public static IReadOnlyCollection<Player> List => Dictionary.Values;
 
         /// <summary>
         /// Gets a <see cref="Dictionary{TKey, TValue}"/> containing cached <see cref="Player"/> and their user ids.
         /// </summary>
         public static Dictionary<string, Player> UserIdsCache { get; } = new(20);
-
-        /// <summary>
-        /// Gets a <see cref="Dictionary{TKey, TValue}"/> containing cached <see cref="Player"/> and their ids.
-        /// </summary>
-        public static Dictionary<int, Player> IdsCache { get; } = new(20);
 
         /// <inheritdoc/>
         public IReadOnlyCollection<EActor> ComponentsInChildren => componentsInChildren;
@@ -152,13 +139,13 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets or sets a <see cref="Dictionary{TKey, TValue}"/> containing cached <see cref="RoleTypeId"/> and their FF multiplier. This is for non-unique roles.
         /// </summary>
-        public Dictionary<RoleTypeId, float> FriendlyFireMultiplier { get; set; } = new();
+        public Dictionary<RoleTypeId, float> FriendlyFireMultiplier { get; set; } = DictionaryPool<RoleTypeId, float>.Pool.Get();
 
         /// <summary>
         /// Gets or sets a <see cref="Dictionary{TKey, TValue}"/> containing cached <see cref="string"/> and their  <see cref="Dictionary{TKey, TValue}"/> which is cached Role with FF multiplier. This is for unique custom roles.
         /// </summary>
         /// <remarks> Consider adding this as object, Dict so that CustomRoles, and Strings can be parsed. </remarks>
-        public Dictionary<string, Dictionary<RoleTypeId, float>> CustomRoleFriendlyFireMultiplier { get; set; } = new();
+        public Dictionary<string, Dictionary<RoleTypeId, float>> CustomRoleFriendlyFireMultiplier { get; set; } = DictionaryPool<string, Dictionary<RoleTypeId, float>>.Pool.Get();
 
         /// <summary>
         /// Gets or sets a unique custom role that does not adbide to base game for this player. Used in conjunction with <see cref="CustomRoleFriendlyFireMultiplier"/>.
@@ -179,7 +166,7 @@ namespace Exiled.API.Features
                 Inventory = value.inventory;
                 CameraTransform = value.PlayerCameraReference;
 
-                value.playerStats._dictionarizedTypes[typeof(HealthStat)] = value.playerStats.StatModules[0] = healthStat = new CustomHealthStat { Hub = value };
+                value.playerStats._dictionarizedTypes[typeof(HealthStat)] = value.playerStats.StatModules[Array.IndexOf(PlayerStats.DefinedModules, typeof(HealthStat))] = healthStat = new CustomHealthStat { Hub = value };
             }
         }
 
@@ -260,16 +247,13 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets the player's user id.
         /// </summary>
-        public string UserId => referenceHub.characterClassManager.UserId;
+        public string UserId => referenceHub.authManager.UserId;
 
         /// <summary>
         /// Gets or sets the player's custom user id.
         /// </summary>
-        public string CustomUserId
-        {
-            get => ReferenceHub.characterClassManager.UserId2;
-            set => ReferenceHub.characterClassManager.UserId2 = value;
-        }
+        [Obsolete("Remove by NW", true)]
+        public string CustomUserId { get; set; }
 
         /// <summary>
         /// Gets the player's user id without the authentication.
@@ -279,7 +263,7 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets the player's authentication token.
         /// </summary>
-        public string AuthenticationToken => ReferenceHub.characterClassManager.AuthToken;
+        public string AuthenticationToken => ReferenceHub.authManager.GetAuthToken();
 
         /// <summary>
         /// Gets the player's authentication type.
@@ -291,17 +275,13 @@ namespace Exiled.API.Features
                 if (string.IsNullOrEmpty(UserId))
                     return AuthenticationType.Unknown;
 
-                int index = UserId.LastIndexOf('@');
-
-                if (index == -1)
-                    return AuthenticationType.Unknown;
-
-                return UserId.Substring(index + 1) switch
+                return UserId.Substring(UserId.LastIndexOf('@') + 1) switch
                 {
                     "steam" => AuthenticationType.Steam,
                     "discord" => AuthenticationType.Discord,
                     "northwood" => AuthenticationType.Northwood,
-                    "patreon" => AuthenticationType.Patreon,
+                    "localhost" => AuthenticationType.LocalHost,
+                    "ID_Dedicated" => AuthenticationType.DedicatedServer,
                     _ => AuthenticationType.Unknown,
                 };
             }
@@ -316,12 +296,30 @@ namespace Exiled.API.Features
         public bool IsVerified { get; internal set; }
 
         /// <summary>
-        /// Gets or sets the player's display nickname.
-        /// May be <see langword="null"/>.
+        /// Gets or sets a value indicating whether or not the player is a NPC.
+        /// </summary>
+        public bool IsNPC { get; set; }
+
+        /// <summary>
+        /// Gets a value indicating whether or not the player has an active CustomName.
+        /// </summary>
+        public bool HasCustomName => ReferenceHub.nicknameSync.HasCustomName;
+
+        /// <summary>
+        /// Gets or sets the player's nickname displayed to other player.
         /// </summary>
         public string DisplayNickname
         {
-            get => ReferenceHub.nicknameSync.Network_displayName;
+            get => ReferenceHub.nicknameSync.DisplayName;
+            set => ReferenceHub.nicknameSync.DisplayName = value;
+        }
+
+        /// <summary>
+        /// Gets or sets the player's nickname, if null it sets the original nickname.
+        /// </summary>
+        public string CustomName
+        {
+            get => ReferenceHub.nicknameSync.Network_displayName ?? Nickname;
             set => ReferenceHub.nicknameSync.Network_displayName = value;
         }
 
@@ -346,7 +344,53 @@ namespace Exiled.API.Features
         public string CustomInfo
         {
             get => ReferenceHub.nicknameSync.Network_customPlayerInfoString;
-            set => ReferenceHub.nicknameSync.Network_customPlayerInfoString = value;
+            set
+            {
+                // NW Client check.
+                if (value.Contains('<'))
+                {
+                    foreach (string token in value.Split('<'))
+                    {
+                        if (token.StartsWith("/", StringComparison.Ordinal) ||
+                            token.StartsWith("b>", StringComparison.Ordinal) ||
+                            token.StartsWith("i>", StringComparison.Ordinal) ||
+                            token.StartsWith("size=", StringComparison.Ordinal) ||
+                            token.Length is 0)
+                            continue;
+
+                        if (token.StartsWith("color=", StringComparison.Ordinal))
+                        {
+                            if (token.Length < 14 || token[13] != '>')
+                                Log.Error($"Custom info of player {Nickname} has been REJECTED. \nreason: (Bad text reject) \ntoken: {token} \nInfo: {value}");
+                            else if (!Misc.AllowedColors.ContainsValue(token.Substring(6, 7)))
+                                Log.Error($"Custom info of player {Nickname} has been REJECTED. \nreason: (Bad color reject) \ntoken: {token} \nInfo: {value}");
+                        }
+                        else if (token.StartsWith("#", StringComparison.Ordinal))
+                        {
+                            if (token.Length < 8 || token[7] != '>')
+                                Log.Error($"Custom info of player {Nickname} has been REJECTED. \nreason: (Bad text reject) \ntoken: {token} \nInfo: {value}");
+                            else if (!Misc.AllowedColors.ContainsValue(token.Substring(0, 7)))
+                                Log.Error($"Custom info of player {Nickname} has been REJECTED. \nreason: (Bad color reject) \ntoken: {token} \nInfo: {value}");
+                        }
+                        else
+                        {
+                            Log.Error($"Custom info of player {Nickname} has been REJECTED. \nreason: (Bad color reject) \ntoken: {token} \nInfo: {value}");
+                        }
+                    }
+                }
+
+                InfoArea = string.IsNullOrEmpty(value) ? InfoArea & ~PlayerInfoArea.CustomInfo : InfoArea |= PlayerInfoArea.CustomInfo;
+                ReferenceHub.nicknameSync.Network_customPlayerInfoString = value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the range at which this player's info can be viewed by others.
+        /// </summary>
+        public float InfoViewRange
+        {
+            get => ReferenceHub.nicknameSync.NetworkViewRange;
+            set => ReferenceHub.nicknameSync.NetworkViewRange = value;
         }
 
         /// <summary>
@@ -358,12 +402,12 @@ namespace Exiled.API.Features
         /// Data saved with session variables is not being saved on player disconnect. If the data must be saved after the player's disconnects, a database must be used instead.
         /// </para>
         /// </summary>
-        public Dictionary<string, object> SessionVariables { get; } = new();
+        public Dictionary<string, object> SessionVariables { get; } = DictionaryPool<string, object>.Pool.Get();
 
         /// <summary>
         /// Gets a value indicating whether or not the player has Do Not Track (DNT) enabled. If this value is <see langword="true"/>, data about the player unrelated to server security shouldn't be stored.
         /// </summary>
-        public bool DoNotTrack => ReferenceHub.serverRoles.DoNotTrack;
+        public bool DoNotTrack => ReferenceHub.authManager.DoNotTrack;
 
         /// <summary>
         /// Gets a value indicating whether the player is fully connected to the server.
@@ -373,12 +417,27 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets a value indicating whether or not the player has a reserved slot.
         /// </summary>
+        /// <seealso cref="GiveReservedSlot(bool)"/>
+        /// <seealso cref="AddReservedSlot(string, bool)"/>
         public bool HasReservedSlot => ReservedSlot.HasReservedSlot(UserId, out _);
+
+        /// <summary>
+        /// Gets a value indicating whether or not the player is in whitelist.
+        /// </summary>
+        /// <remarks>It will always return <see langword="true"/> if a whitelist is disabled on the server.</remarks>
+        /// <seealso cref="GrantWhitelist(bool)"/>
+        /// <seealso cref="AddToWhitelist(string, bool)"/>
+        public bool IsWhitelisted => WhiteList.IsWhitelisted(UserId);
 
         /// <summary>
         /// Gets a value indicating whether or not the player has Remote Admin access.
         /// </summary>
         public bool RemoteAdminAccess => ReferenceHub.serverRoles.RemoteAdmin;
+
+        /// <summary>
+        /// Gets a value indicating whether or not the player has Admin Chat access.
+        /// </summary>
+        public bool AdminChatAccess => ReferenceHub.serverRoles.AdminChatPerms;
 
         /// <summary>
         /// Gets a value indicating a player's kick power.
@@ -391,7 +450,7 @@ namespace Exiled.API.Features
         public bool IsOverwatchEnabled
         {
             get => ReferenceHub.serverRoles.IsInOverwatch;
-            set => ReferenceHub.serverRoles.SetOverwatchStatus((byte)(value ? 1 : 0));
+            set => ReferenceHub.serverRoles.IsInOverwatch = value;
         }
 
         /// <summary>
@@ -451,13 +510,23 @@ namespace Exiled.API.Features
         }
 
         /// <summary>
+        /// Gets or sets the relative player's position.
+        /// </summary>
+        /// <remarks>The value will be default if the player's role is not an <see cref="FpcRole"/>.</remarks>
+        public RelativePosition RelativePosition
+        {
+            get => Role is FpcRole fpcRole ? fpcRole.RelativePosition : default;
+            set => Position = value.Position;
+        }
+
+        /// <summary>
         /// Gets or sets the player's rotation.
         /// </summary>
         /// <returns>Returns the direction the player is looking at.</returns>
-        public Vector3 Rotation
+        public Quaternion Rotation
         {
-            get => Transform.eulerAngles;
-            set => ReferenceHub.TryOverridePosition(Position, value - Rotation);
+            get => Transform.rotation;
+            set => ReferenceHub.TryOverridePosition(Position, value.eulerAngles);
         }
 
         /// <summary>
@@ -471,18 +540,28 @@ namespace Exiled.API.Features
         public LeadingTeam LeadingTeam => Role.Team.GetLeadingTeam();
 
         /// <summary>
+        /// Gets or sets a value indicating the actual RA permissions.
+        /// </summary>
+        public PlayerPermissions RemoteAdminPermissions
+        {
+            get => (PlayerPermissions)ReferenceHub.serverRoles.Permissions;
+            set => ReferenceHub.serverRoles.Permissions = (ulong)value;
+        }
+
+        /// <summary>
         /// Gets a <see cref="Roles.Role"/> that is unique to this player and this class. This allows modification of various aspects related to the role solely.
         /// <para>
         /// The type of the Role is different based on the <see cref="RoleTypeId"/> of the player, and casting should be used to modify the role.
-        /// <br /><see cref="RoleTypeId.Spectator"/> = <see cref="SpectatorRole"/>.
-        /// <br /><see cref="RoleTypeId.Overwatch"/> = <see cref="OverwatchRole"/>.
-        /// <br /><see cref="RoleTypeId.None"/> = <see cref="NoneRole"/>.
+        /// <br /><see cref="RoleTypeId.Spectator"/> = <see cref="Roles.SpectatorRole"/>.
+        /// <br /><see cref="RoleTypeId.Overwatch"/> = <see cref="Roles.OverwatchRole"/>.
+        /// <br /><see cref="RoleTypeId.None"/> = <see cref="Roles.NoneRole"/>.
         /// <br /><see cref="RoleTypeId.Scp049"/> = <see cref="Scp049Role"/>.
         /// <br /><see cref="RoleTypeId.Scp0492"/> = <see cref="Scp0492Role"/>.
         /// <br /><see cref="RoleTypeId.Scp079"/> = <see cref="Scp079Role"/>.
         /// <br /><see cref="RoleTypeId.Scp096"/> = <see cref="Scp096Role"/>.
         /// <br /><see cref="RoleTypeId.Scp106"/> = <see cref="Scp106Role"/>.
         /// <br /><see cref="RoleTypeId.Scp173"/> = <see cref="Scp173Role"/>.
+        /// <br /><see cref="RoleTypeId.Scp3114"/> = <see cref="Scp3114Role"/>.
         /// <br /><see cref="RoleTypeId.Scp939"/> = <see cref="Scp939Role"/>.
         /// <br />If not listed above, the type of Role will be <see cref="HumanRole"/>.
         /// </para>
@@ -502,10 +581,25 @@ namespace Exiled.API.Features
         }
 
         /// <summary>
+        /// Gets or sets the player's SCP preferences.
+        /// </summary>
+        public ScpSpawnPreferences.SpawnPreferences ScpPreferences
+        {
+            get
+            {
+                if (ScpSpawnPreferences.Preferences.TryGetValue(Connection.connectionId, out ScpSpawnPreferences.SpawnPreferences value))
+                    return value;
+
+                return default;
+            }
+            set => ScpSpawnPreferences.Preferences[Connection.connectionId] = value;
+        }
+
+        /// <summary>
         /// Gets a value indicating whether or not the player is cuffed.
         /// </summary>
         /// <remarks>Players can be cuffed without another player being the cuffer.</remarks>
-        public bool IsCuffed => Cuffer is not null;
+        public bool IsCuffed => Inventory.IsDisarmed();
 
         /// <summary>
         /// Gets a value indicating whether or not the player is reloading a weapon.
@@ -525,7 +619,7 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets a value indicating whether or not the player is jumping.
         /// </summary>
-        public bool IsJumping { get; internal set; }
+        public bool IsJumping => Role is FpcRole fpc && fpc.FirstPersonController.FpcModule.Motor.IsJumping;
 
         /// <summary>
         /// Gets the player's IP address.
@@ -546,6 +640,11 @@ namespace Exiled.API.Features
         /// Gets the player's <see cref="Mirror.NetworkIdentity"/>.
         /// </summary>
         public NetworkIdentity NetworkIdentity => ReferenceHub.networkIdentity;
+
+        /// <summary>
+        /// Gets the player's net ID.
+        /// </summary>
+        public uint NetId => ReferenceHub.netId;
 
         /// <summary>
         /// Gets a value indicating whether or not the player is the host.
@@ -605,6 +704,9 @@ namespace Exiled.API.Features
             get => ReferenceHub.transform.localScale;
             set
             {
+                if (value == Scale)
+                    return;
+
                 try
                 {
                     ReferenceHub.transform.localScale = value;
@@ -634,7 +736,7 @@ namespace Exiled.API.Features
         /// <remarks>This property will NOT persistently mute and unmute the player. For persistent mutes, see <see cref="Mute(bool)"/> and <see cref="UnMute(bool)"/>.</remarks>
         public bool IsMuted
         {
-            get => VoiceChatMutes.Mutes.Contains(UserId) && (VoiceChatMuteFlags.HasFlag(VcMuteFlags.GlobalRegular) || VoiceChatMuteFlags.HasFlag(VcMuteFlags.LocalRegular));
+            get => VoiceChatMutes.QueryLocalMute(UserId, false);
             set
             {
                 if (value)
@@ -666,7 +768,7 @@ namespace Exiled.API.Features
         /// <remarks>This property will NOT persistently mute and unmute the player. For persistent mutes, see <see cref="Mute(bool)"/> and <see cref="UnMute(bool)"/>.</remarks>
         public bool IsIntercomMuted
         {
-            get => VoiceChatMutes.Mutes.Contains(UserId) && (VoiceChatMuteFlags.HasFlag(VcMuteFlags.GlobalIntercom) || VoiceChatMuteFlags.HasFlag(VcMuteFlags.LocalIntercom));
+            get => VoiceChatMutes.QueryLocalMute(UserId, true);
             set
             {
                 if (value)
@@ -718,7 +820,16 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets the player's unit name.
         /// </summary>
-        public string UnitName => Role.Base is PlayerRoles.HumanRole humanRole ? humanRole.UnitName : string.Empty;
+        public string UnitName => Role.Base is PlayerRoles.HumanRole humanRole ? UnitNameMessageHandler.GetReceived(humanRole.AssignedSpawnableTeam, humanRole.UnitNameId) : string.Empty;
+
+        /// <summary>
+        /// Gets or sets the player's unit id.
+        /// </summary>
+        public byte UnitId
+        {
+            get => Role.Base is PlayerRoles.HumanRole humanRole ? humanRole.UnitNameId : byte.MinValue;
+            set => _ = Role.Base is PlayerRoles.HumanRole humanRole ? humanRole.UnitNameId = value : _ = value;
+        }
 
         /// <summary>
         /// Gets or sets the player's health.
@@ -729,10 +840,10 @@ namespace Exiled.API.Features
             get => healthStat.CurValue;
             set
             {
-                healthStat.CurValue = value;
-
                 if (value > MaxHealth)
                     MaxHealth = value;
+
+                healthStat.CurValue = value;
             }
         }
 
@@ -795,17 +906,17 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets a <see cref="IEnumerable{T}"/> of all active Artificial Health processes on the player.
         /// </summary>
-        public IEnumerable<AhpStat.AhpProcess> ActiveArtificialHealthProcesses => ((AhpStat)ReferenceHub.playerStats.StatModules[1])._activeProcesses;
+        public IEnumerable<AhpStat.AhpProcess> ActiveArtificialHealthProcesses => ReferenceHub.playerStats.GetModule<AhpStat>()._activeProcesses;
 
         /// <summary>
         /// Gets the player's <see cref="PlayerStatsSystem.HumeShieldStat"/>.
         /// </summary>
-        public HumeShieldStat HumeShieldStat => (HumeShieldStat)ReferenceHub.playerStats.StatModules[4];
+        public HumeShieldStat HumeShieldStat => ReferenceHub.playerStats.GetModule<HumeShieldStat>();
 
         /// <summary>
         /// Gets or sets the item in the player's hand. Value will be <see langword="null"/> if the player is not holding anything.
         /// </summary>
-        /// <seealso cref="DropHeldItem"/>
+        /// <seealso cref="DropHeldItem()"/>
         public Item CurrentItem
         {
             get => Item.Get(Inventory.CurInstance);
@@ -820,7 +931,7 @@ namespace Exiled.API.Features
                 if (!Inventory.UserInventory.Items.TryGetValue(value.Serial, out _))
                     AddItem(value.Base);
 
-                Timing.CallDelayed(0.5f, () => Inventory.ServerSelectItem(value.Serial));
+                Inventory.ServerSelectItem(value.Serial);
             }
         }
 
@@ -832,7 +943,7 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets the <see cref="StaminaStat"/> class.
         /// </summary>
-        public StaminaStat StaminaStat => (StaminaStat)ReferenceHub.playerStats.StatModules[2];
+        public StaminaStat StaminaStat => ReferenceHub.playerStats.GetModule<StaminaStat>();
 
         /// <summary>
         /// Gets or sets the amount of stamina the player has.
@@ -847,7 +958,7 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets a value indicating whether or not the staff bypass is enabled.
         /// </summary>
-        public bool IsStaffBypassEnabled => ReferenceHub.serverRoles.BypassStaff;
+        public bool IsStaffBypassEnabled => ReferenceHub.authManager.BypassBansFlagSet;
 
         /// <summary>
         /// Gets or sets the player's group name.
@@ -861,12 +972,17 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets the current <see cref="Room"/> the player is in.
         /// </summary>
-        public Room CurrentRoom => Map.FindParentRoom(GameObject);
+        public Room CurrentRoom => Room.FindParentRoom(GameObject);
 
         /// <summary>
         /// Gets the current zone the player is in.
         /// </summary>
         public ZoneType Zone => CurrentRoom?.Zone ?? ZoneType.Unspecified;
+
+        /// <summary>
+        /// Gets the current <see cref="Features.Lift"/> the player is in. Can be <see langword="null"/>.
+        /// </summary>
+        public Lift Lift => Lift.Get(Position);
 
         /// <summary>
         /// Gets all currently active <see cref="StatusEffectBase"> effects</see>.
@@ -917,7 +1033,7 @@ namespace Exiled.API.Features
 
                 ServerRoles serverRoles = ReferenceHub.serverRoles;
 
-                return new Badge(serverRoles._bgt, serverRoles._bgc, serverRoles.GlobalBadgeType, true);
+                return new Badge(serverRoles._bgt, serverRoles._bgc, true);
             }
         }
 
@@ -930,26 +1046,26 @@ namespace Exiled.API.Features
             set
             {
                 if (value)
-                    ReferenceHub.characterClassManager.UserCode_CmdRequestHideTag();
+                    ReferenceHub.serverRoles.TryHideTag();
                 else
-                    ReferenceHub.characterClassManager.UserCode_CmdRequestShowTag(false);
+                    ReferenceHub.serverRoles.RefreshLocalTag();
             }
         }
 
         /// <summary>
         /// Gets a value indicating whether or not the player is Northwood staff.
         /// </summary>
-        public bool IsNorthwoodStaff => ReferenceHub.serverRoles.Staff;
+        public bool IsNorthwoodStaff => ReferenceHub.authManager.NorthwoodStaff;
 
         /// <summary>
         /// Gets a value indicating whether or not the player is a global moderator.
         /// </summary>
-        public bool IsGlobalModerator => ReferenceHub.serverRoles.RaEverywhere;
+        public bool IsGlobalModerator => ReferenceHub.authManager.RemoteAdminGlobalAccess;
 
         /// <summary>
         /// Gets a value indicating whether or not the player is in the pocket dimension.
         /// </summary>
-        public bool IsInPocketDimension => IsEffectActive<Corroding>() || Map.FindParentRoom(GameObject)?.Type == RoomType.Pocket;
+        public bool IsInPocketDimension => CurrentRoom?.Type is RoomType.Pocket;
 
         /// <summary>
         /// Gets or sets a value indicating whether or not the player should use stamina system.
@@ -964,12 +1080,12 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets the player's items.
         /// </summary>
-        public IReadOnlyCollection<Item> Items => readOnlyItems;
+        public IReadOnlyCollection<Item> Items { get; }
 
         /// <summary>
         /// Gets a value indicating whether or not the player's inventory is empty.
         /// </summary>
-        public bool IsInventoryEmpty => Items.Count == 0;
+        public bool IsInventoryEmpty => Items.Count is 0;
 
         /// <summary>
         /// Gets a value indicating whether or not the player's inventory is full.
@@ -1014,7 +1130,7 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets a dictionary for storing player objects of connected but not yet verified players.
         /// </summary>
-        internal static ConditionalWeakTable<ReferenceHub, Player> UnverifiedPlayers { get; } = new();
+        internal static ConditionalWeakTable<GameObject, Player> UnverifiedPlayers { get; } = new();
 
         /// <summary>
         /// Converts NwPluginAPI player to EXILED player.
@@ -1048,7 +1164,7 @@ namespace Exiled.API.Features
         /// Gets a <see cref="IEnumerable{T}"/> of <see cref="Player"/> filtered based on a predicate.
         /// </summary>
         /// <param name="predicate">The condition to satisfy.</param>
-        /// <returns>A <see cref="IEnumerable{T}"/> of <see cref="Player"/> which contains elements that satify the condition.</returns>
+        /// <returns>A <see cref="IEnumerable{T}"/> of <see cref="Player"/> which contains elements that satisfy the condition.</returns>
         public static IEnumerable<Player> Get(Func<Player, bool> predicate) => List.Where(predicate);
 
         /// <summary>
@@ -1057,6 +1173,13 @@ namespace Exiled.API.Features
         /// <param name="sender">The command sender.</param>
         /// <returns>A <see cref="Player"/> or <see langword="null"/> if not found.</returns>
         public static Player Get(CommandSystem.ICommandSender sender) => Get(sender as CommandSender);
+
+        /// <summary>
+        /// Gets the <see cref="Player"/> belonging to the <see cref="Footprinting.Footprint"/>, if any.
+        /// </summary>
+        /// <param name="footprint">The Footprint.</param>
+        /// <returns>A <see cref="Player"/> or <see langword="null"/> if not found.</returns>
+        public static Player Get(Footprint footprint) => Get(footprint.Hub);
 
         /// <summary>
         /// Gets the <see cref="Player"/> belonging to the <see cref="CommandSender"/>, if any.
@@ -1120,8 +1243,10 @@ namespace Exiled.API.Features
             if (gameObject == null)
                 return null;
 
-            Dictionary.TryGetValue(gameObject, out Player player);
+            if (Dictionary.TryGetValue(gameObject, out Player player))
+                return player;
 
+            UnverifiedPlayers.TryGetValue(gameObject, out player);
             return player;
         }
 
@@ -1130,23 +1255,7 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="id">The player id.</param>
         /// <returns>Returns the player found or <see langword="null"/> if not found.</returns>
-        public static Player Get(int id)
-        {
-            if (IdsCache.TryGetValue(id, out Player player) && player?.ReferenceHub is not null)
-                return player;
-
-            foreach (Player playerFound in Dictionary.Values)
-            {
-                if (playerFound.Id != id)
-                    continue;
-
-                IdsCache[id] = playerFound;
-
-                return playerFound;
-            }
-
-            return null;
-        }
+        public static Player Get(int id) => ReferenceHub.TryGetHub(id, out ReferenceHub referenceHub) ? Get(referenceHub) : null;
 
         /// <summary>
         /// Gets the <see cref="Player"/> by identifier.
@@ -1160,13 +1269,13 @@ namespace Exiled.API.Features
                 if (string.IsNullOrWhiteSpace(args))
                     return null;
 
-                if (UserIdsCache.TryGetValue(args, out Player playerFound) && playerFound?.ReferenceHub is not null)
+                if (UserIdsCache.TryGetValue(args, out Player playerFound) && playerFound.IsConnected)
                     return playerFound;
 
                 if (int.TryParse(args, out int id))
                     return Get(id);
 
-                if (args.EndsWith("@steam") || args.EndsWith("@discord") || args.EndsWith("@northwood") || args.EndsWith("@patreon"))
+                if (args.EndsWith("@steam") || args.EndsWith("@discord") || args.EndsWith("@northwood"))
                 {
                     foreach (Player player in Dictionary.Values)
                     {
@@ -1202,7 +1311,7 @@ namespace Exiled.API.Features
                 }
 
                 if (playerFound is not null)
-                    UserIdsCache[args] = playerFound;
+                    UserIdsCache[playerFound.UserId] = playerFound;
 
                 return playerFound;
             }
@@ -1227,6 +1336,14 @@ namespace Exiled.API.Features
         /// <param name="player">The player that matches the given <see cref="CommandSystem.ICommandSender"/>, or <see langword="null"/> if no player is found.</param>
         /// <returns>A boolean indicating whether or not a player was found.</returns>
         public static bool TryGet(CommandSystem.ICommandSender sender, out Player player) => (player = Get(sender)) is not null;
+
+        /// <summary>
+        /// Try-get a player given a <see cref="Footprinting.Footprint"/>.
+        /// </summary>
+        /// <param name="footprint">The <see cref="Footprinting.Footprint"/>.</param>
+        /// <param name="player">The player that matches the given <see cref="Footprinting.Footprint"/>, or <see langword="null"/> if no player is found.</param>
+        /// <returns>A boolean indicating whether or not a player was found.</returns>
+        public static bool TryGet(Footprint footprint, out Player player) => (player = Get(footprint)) is not null;
 
         /// <summary>
         /// Try-get a player given a <see cref="CommandSender"/>.
@@ -1301,21 +1418,63 @@ namespace Exiled.API.Features
         public static bool TryGet(PluginAPI.Core.Player apiPlayer, out Player player) => (player = Get(apiPlayer)) is not null;
 
         /// <summary>
+        /// Try-get player by <see cref="Collider"/>.
+        /// </summary>
+        /// <param name="collider">The <see cref="Collider"/>.</param>
+        /// <param name="player">The player found or <see langword="null"/> if not found.</param>
+        /// <returns>A boolean indicating whether or not a player was found.</returns>
+        public static bool TryGet(Collider collider, out Player player) => (player = Get(collider)) is not null;
+
+        /// <summary>
         /// Adds a player's UserId to the list of reserved slots.
         /// </summary>
         /// <remarks>This method does not permanently give a user a reserved slot. The slot will be removed if the reserved slots are reloaded.</remarks>
         /// <param name="userId">The UserId of the player to add.</param>
         /// <returns><see langword="true"/> if the slot was successfully added, or <see langword="false"/> if the provided UserId already has a reserved slot.</returns>
         /// <seealso cref="GiveReservedSlot()"/>
-        public static bool AddReservedSlot(string userId)
+        // TODO: Remove this method
+        public static bool AddReservedSlot(string userId) => ReservedSlot.Users.Add(userId);
+
+        /// <summary>
+        /// Adds a player's UserId to the list of reserved slots.
+        /// </summary>
+        /// <param name="userId">The UserId of the player to add.</param>
+        /// <param name="isPermanent"> Whether or not to add a <see langword="userId"/> permanently. It will write a <see langword="userId"/> to UserIDReservedSlots.txt file.</param>
+        /// <returns><see langword="true"/> if the slot was successfully added, or <see langword="false"/> if the provided UserId already has a reserved slot.</returns>
+        /// <seealso cref="GiveReservedSlot(bool)"/>
+        public static bool AddReservedSlot(string userId, bool isPermanent)
         {
-            if (!ReservedSlot.HasReservedSlot(userId, out _))
+            if (isPermanent)
             {
-                ReservedSlot.Users.Add(userId);
+                if (ReservedSlots.HasReservedSlot(userId))
+                    return false;
+
+                ReservedSlots.Add(userId);
                 return true;
             }
 
-            return false;
+            return ReservedSlot.Users.Add(userId);
+        }
+
+        /// <summary>
+        /// Adds a player's UserId to the whitelist.
+        /// </summary>
+        /// <param name="userId">The UserId of the player to add.</param>
+        /// <param name="isPermanent"> Whether or not to add a <see langword="userId"/> permanently. It will write a <see langword="userId"/> to UserIDWhitelist.txt file.</param>
+        /// <returns><see langword="true"/> if the record was successfully added, or <see langword="false"/> if the provided UserId already is in whitelist.</returns>
+        /// <seealso cref="GrantWhitelist(bool)"/>
+        public static bool AddToWhitelist(string userId, bool isPermanent)
+        {
+            if (isPermanent)
+            {
+                if (WhiteList.IsOnWhitelist(userId))
+                    return false;
+
+                Whitelist.Add(userId);
+                return true;
+            }
+
+            return WhiteList.Users.Add(userId);
         }
 
         /// <summary>
@@ -1324,12 +1483,34 @@ namespace Exiled.API.Features
         public static void ReloadReservedSlots() => ReservedSlot.Reload();
 
         /// <summary>
+        /// Reloads the whitelist, clearing all whitelist changes made with add/remove methods and reverting to the whitelist files.
+        /// </summary>
+        public static void ReloadWhitelist() => WhiteList.Reload();
+
+        /// <summary>
         /// Adds the player's UserId to the list of reserved slots.
         /// </summary>
         /// <remarks>This method does not permanently give a user a reserved slot. The slot will be removed if the reserved slots are reloaded.</remarks>
         /// <returns><see langword="true"/> if the slot was successfully added, or <see langword="false"/> if the player already has a reserved slot.</returns>
         /// <seealso cref="AddReservedSlot(string)"/>
+        // TODO: Remove this method
         public bool GiveReservedSlot() => AddReservedSlot(UserId);
+
+        /// <summary>
+        /// Adds a player's UserId to the list of reserved slots.
+        /// </summary>
+        /// <param name="isPermanent"> Whether or not to add a player's UserId permanently. It will write a player's UserId to UserIDReservedSlots.txt file.</param>
+        /// <returns><see langword="true"/> if the slot was successfully added, or <see langword="false"/> if the provided UserId already has a reserved slot.</returns>
+        /// <seealso cref="AddReservedSlot(string, bool)"/>
+        public bool GiveReservedSlot(bool isPermanent) => AddReservedSlot(UserId, isPermanent);
+
+        /// <summary>
+        /// Adds a player's UserId to the whitelist.
+        /// </summary>
+        /// <param name="isPermanent"> Whether or not to add a player's UserId permanently. It will write a player's UserId to UserIDWhitelist.txt file.</param>
+        /// <returns><see langword="true"/> if the record was successfully added, or <see langword="false"/> if the provided UserId already is in whitelist.</returns>
+        /// <seealso cref="AddToWhitelist(string, bool)"/>
+        public bool GrantWhitelist(bool isPermanent) => AddToWhitelist(UserId, isPermanent);
 
         /// <summary>
         /// Tries to add <see cref="RoleTypeId"/> to FriendlyFire rules.
@@ -1380,17 +1561,17 @@ namespace Exiled.API.Features
         /// <returns> Whether or not the item was able to be added. </returns>
         public bool TryAddFriendlyFire(Dictionary<RoleTypeId, float> ffRules, bool overwrite = false)
         {
-            Dictionary<RoleTypeId, float> temporaryFriendlyFireRules = new();
-            foreach (KeyValuePair<RoleTypeId, float> roleFF in ffRules)
+            Dictionary<RoleTypeId, float> temporaryFriendlyFireRules = DictionaryPool<RoleTypeId, float>.Pool.Get();
+            foreach (KeyValuePair<RoleTypeId, float> roleFf in ffRules)
             {
                 if (overwrite)
                 {
-                    SetFriendlyFire(roleFF);
+                    SetFriendlyFire(roleFf);
                 }
                 else
                 {
-                    if (!FriendlyFireMultiplier.ContainsKey(roleFF.Key))
-                        temporaryFriendlyFireRules.Add(roleFF.Key, roleFF.Value);
+                    if (!FriendlyFireMultiplier.ContainsKey(roleFf.Key))
+                        temporaryFriendlyFireRules.Add(roleFf.Key, roleFf.Value);
                     else
                         return false; // Contained Key but overwrite set to false so we do not add any.
                 }
@@ -1402,6 +1583,7 @@ namespace Exiled.API.Features
                     TryAddFriendlyFire(roleFF);
             }
 
+            DictionaryPool<RoleTypeId, float>.Pool.Return(temporaryFriendlyFireRules);
             return true;
         }
 
@@ -1432,16 +1614,16 @@ namespace Exiled.API.Features
         /// Wrapper to call <see cref="SetCustomRoleFriendlyFire(string, RoleTypeId, float)"/>.
         /// </summary>
         /// <param name="roleTypeId"> Role associated for CustomFF. </param>
-        /// <param name="roleFF"> Role with FF to add even if it exists. </param>
-        public void SetCustomRoleFriendlyFire(string roleTypeId, KeyValuePair<RoleTypeId, float> roleFF) => SetCustomRoleFriendlyFire(roleTypeId, roleFF.Key, roleFF.Value);
+        /// <param name="roleFf"> Role with FF to add even if it exists. </param>
+        public void SetCustomRoleFriendlyFire(string roleTypeId, KeyValuePair<RoleTypeId, float> roleFf) => SetCustomRoleFriendlyFire(roleTypeId, roleFf.Key, roleFf.Value);
 
         /// <summary>
         /// Tries to add <see cref="RoleTypeId"/> to FriendlyFire rules for CustomRole.
         /// </summary>
         /// <param name="roleTypeId"> Role associated for CustomFF. </param>
-        /// <param name="roleFF"> Role to add and FF multiplier. </param>
+        /// <param name="roleFf"> Role to add and FF multiplier. </param>
         /// <returns> Whether or not the item was able to be added. </returns>
-        public bool TryAddCustomRoleFriendlyFire(string roleTypeId, KeyValuePair<RoleTypeId, float> roleFF) => TryAddCustomRoleFriendlyFire(roleTypeId, roleFF.Key, roleFF.Value);
+        public bool TryAddCustomRoleFriendlyFire(string roleTypeId, KeyValuePair<RoleTypeId, float> roleFf) => TryAddCustomRoleFriendlyFire(roleTypeId, roleFf.Key, roleFf.Value);
 
         /// <summary>
         /// Tries to add <see cref="RoleTypeId"/> to FriendlyFire rules for CustomRole.
@@ -1476,7 +1658,7 @@ namespace Exiled.API.Features
         /// <returns> Whether or not the item was able to be added. </returns>
         public bool TryAddCustomRoleFriendlyFire(string customRoleName, Dictionary<RoleTypeId, float> ffRules, bool overwrite = false)
         {
-            Dictionary<RoleTypeId, float> temporaryFriendlyFireRules = new();
+            Dictionary<RoleTypeId, float> temporaryFriendlyFireRules = DictionaryPool<RoleTypeId, float>.Pool.Get();
 
             if (CustomRoleFriendlyFireMultiplier.TryGetValue(customRoleName, out Dictionary<RoleTypeId, float> pairedRoleFF))
             {
@@ -1497,16 +1679,17 @@ namespace Exiled.API.Features
 
                 if (!overwrite)
                 {
-                    foreach (KeyValuePair<RoleTypeId, float> roleFF in temporaryFriendlyFireRules)
-                        TryAddCustomRoleFriendlyFire(customRoleName, roleFF);
+                    foreach (KeyValuePair<RoleTypeId, float> roleFf in temporaryFriendlyFireRules)
+                        TryAddCustomRoleFriendlyFire(customRoleName, roleFf);
                 }
             }
             else
             {
-                foreach (KeyValuePair<RoleTypeId, float> roleFF in ffRules)
-                    SetCustomRoleFriendlyFire(customRoleName, roleFF);
+                foreach (KeyValuePair<RoleTypeId, float> roleFf in ffRules)
+                    SetCustomRoleFriendlyFire(customRoleName, roleFf);
             }
 
+            DictionaryPool<RoleTypeId, float>.Pool.Return(temporaryFriendlyFireRules);
             return true;
         }
 
@@ -1516,8 +1699,8 @@ namespace Exiled.API.Features
         /// <param name="customRoleFriendlyFireMultiplier"> Custom role with FF role rules. </param>
         public void TryAddCustomRoleFriendlyFire(Dictionary<string, Dictionary<RoleTypeId, float>> customRoleFriendlyFireMultiplier)
         {
-            foreach (KeyValuePair<string, Dictionary<RoleTypeId, float>> newRolesWithFF in customRoleFriendlyFireMultiplier)
-                TryAddCustomRoleFriendlyFire(newRolesWithFF.Key, newRolesWithFF.Value);
+            foreach (KeyValuePair<string, Dictionary<RoleTypeId, float>> newRolesWithFf in customRoleFriendlyFireMultiplier)
+                TryAddCustomRoleFriendlyFire(newRolesWithFf.Key, newRolesWithFf.Value);
         }
 
         /// <summary>
@@ -1525,9 +1708,7 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="customRoleFriendlyFireMultiplier"> New rules for CustomeRoleFriendlyFireMultiplier to set to. </param>
         public void TrySetCustomRoleFriendlyFire(Dictionary<string, Dictionary<RoleTypeId, float>> customRoleFriendlyFireMultiplier)
-        {
-            CustomRoleFriendlyFireMultiplier = customRoleFriendlyFireMultiplier;
-        }
+            => CustomRoleFriendlyFireMultiplier = customRoleFriendlyFireMultiplier;
 
         /// <summary>
         /// Sets the <see cref="CustomRoleFriendlyFireMultiplier"/>.
@@ -1554,18 +1735,17 @@ namespace Exiled.API.Features
         /// <summary>
         /// Forces the player to reload their current weapon.
         /// </summary>
-        /// <exception cref="InvalidOperationException">If the item is not a firearm.</exception>
-        public void ReloadWeapon()
+        /// <returns><see langword="true"/> if firearm was successfully reloaded. Otherwise, <see langword="false"/>.</returns>
+        public bool ReloadWeapon()
         {
             if (CurrentItem is Firearm firearm)
             {
-                firearm.Base.AmmoManagerModule.ServerTryReload();
+                bool result = firearm.Base.AmmoManagerModule.ServerTryReload();
                 Connection.Send(new RequestMessage(firearm.Serial, RequestType.Reload));
+                return result;
             }
-            else
-            {
-                throw new InvalidOperationException("The player's CurrentItem is not a firearm.");
-            }
+
+            return false;
         }
 
         /// <summary>
@@ -1588,20 +1768,20 @@ namespace Exiled.API.Features
         /// <param name="group">The group to be set.</param>
         public void SetRank(string name, UserGroup group)
         {
-            if (ServerStatic.GetPermissionsHandler()._groups.ContainsKey(name))
+            if (ServerStatic.GetPermissionsHandler()._groups.TryGetValue(name, out UserGroup userGroup))
             {
-                ServerStatic.GetPermissionsHandler()._groups[name].BadgeColor = group.BadgeColor;
-                ServerStatic.GetPermissionsHandler()._groups[name].BadgeText = name;
-                ServerStatic.GetPermissionsHandler()._groups[name].HiddenByDefault = !group.Cover;
-                ServerStatic.GetPermissionsHandler()._groups[name].Cover = group.Cover;
+                userGroup.BadgeColor = group.BadgeColor;
+                userGroup.BadgeText = name;
+                userGroup.HiddenByDefault = !group.Cover;
+                userGroup.Cover = group.Cover;
 
-                ReferenceHub.serverRoles.SetGroup(ServerStatic.GetPermissionsHandler()._groups[name], false, false, group.Cover);
+                ReferenceHub.serverRoles.SetGroup(userGroup, false, false);
             }
             else
             {
                 ServerStatic.GetPermissionsHandler()._groups.Add(name, group);
 
-                ReferenceHub.serverRoles.SetGroup(group, false, false, group.Cover);
+                ReferenceHub.serverRoles.SetGroup(group, false, false);
             }
 
             if (ServerStatic.GetPermissionsHandler()._members.ContainsKey(UserId))
@@ -1627,10 +1807,7 @@ namespace Exiled.API.Features
         /// <param name="cuffer">The cuffer player.</param>
         public void Handcuff(Player cuffer)
         {
-            if (cuffer?.ReferenceHub == null)
-                return;
-
-            if (!IsCuffed && (Vector3.Distance(Position, cuffer.Position) <= 130f))
+            if (cuffer is not null && !IsCuffed && (cuffer.Position - Position).sqrMagnitude <= DisarmingHandlers.ServerDisarmingDistanceSqrt)
                 Cuffer = cuffer;
         }
 
@@ -1657,20 +1834,39 @@ namespace Exiled.API.Features
         /// <summary>
         /// Drops an item from the player's inventory.
         /// </summary>
-        /// <param name="item">The item to be dropped.</param>
+        /// <param name="item">The <see cref="Item"/> to be dropped.</param>
+        /// <param name="isThrown">Is the item Thrown?.</param>
+        public void DropItem(Item item, bool isThrown = false)
+        {
+            if (item is null)
+                return;
+            Inventory.UserCode_CmdDropItem__UInt16__Boolean(item.Serial, isThrown);
+        }
+
+        /// <summary>
+        /// Drops an item from the player's inventory.
+        /// </summary>
+        /// <param name="item">The <see cref="Item"/> to be dropped.</param>
         /// <returns>dropped <see cref="Pickup"/>.</returns>
-        public Pickup DropItem(Item item) => Pickup.Get(Inventory.ServerDropItem(item.Serial));
+        public Pickup DropItem(Item item) => item is not null ? Pickup.Get(Inventory.ServerDropItem(item.Serial)) : null;
+
+        /// <summary>
+        /// Drops the held item. Will not do anything if the player is not holding an item.
+        /// </summary>
+        /// <param name="isThrown">Is the item Thrown?.</param>
+        public void DropHeldItem(bool isThrown = false) => DropItem(CurrentItem, isThrown);
 
         /// <summary>
         /// Drops the held item. Will not do anything if the player is not holding an item.
         /// </summary>
         /// <seealso cref="CurrentItem"/>
-        public void DropHeldItem()
+        /// <returns>Dropped item's <see cref="Pickup"/>.</returns>
+        public Pickup DropHeldItem()
         {
             if (CurrentItem is null)
-                return;
+                return null;
 
-            DropItem(CurrentItem);
+            return DropItem(CurrentItem);
         }
 
         /// <summary>
@@ -1713,7 +1909,7 @@ namespace Exiled.API.Features
         /// <seealso cref="CountItem(ItemType)"/>
         public int CountItem(ItemCategory category) => category switch
         {
-            ItemCategory.Ammo => Inventory.UserInventory.ReserveAmmo.Where(ammo => ammo.Value > 0).Count(),
+            ItemCategory.Ammo => Inventory.UserInventory.ReserveAmmo.Count(ammo => ammo.Value > 0),
             _ => Inventory.UserInventory.Items.Count(tempItem => tempItem.Value.Category == category),
         };
 
@@ -1742,7 +1938,12 @@ namespace Exiled.API.Features
             {
                 item.ChangeOwner(this, Server.Host);
 
-                if (CurrentItem is not null && CurrentItem.Serial == item.Serial)
+                if (CurrentItem == item)
+                {
+                    Inventory.CurInstance = null;
+                }
+
+                if (item.Serial == Inventory.CurItem.SerialNumber)
                     Inventory.NetworkCurItem = ItemIdentifier.None;
 
                 Inventory.UserInventory.Items.Remove(item.Serial);
@@ -1754,6 +1955,19 @@ namespace Exiled.API.Features
         }
 
         /// <summary>
+        /// Removes an <see cref="Item"/> from the player's inventory.
+        /// </summary>
+        /// <param name="serial">The <see cref="Item"/> serial to remove.</param>
+        /// <param name="destroy">Whether or not to destroy the item.</param>
+        /// <returns>A value indicating whether or not the <see cref="Item"/> was removed.</returns>
+        public bool RemoveItem(ushort serial, bool destroy = true)
+        {
+            if (Items.SingleOrDefault(item => item.Serial == serial) is not Item item)
+                return false;
+            return RemoveItem(item, destroy);
+        }
+
+        /// <summary>
         /// Removes all <see cref="Item"/>'s that satisfy the condition from the player's inventory.
         /// </summary>
         /// <param name="predicate">The condition to satisfy.</param>
@@ -1761,7 +1975,7 @@ namespace Exiled.API.Features
         /// <returns>Count of a successfully removed <see cref="Item"/>'s.</returns>
         public int RemoveItem(Func<Item, bool> predicate, bool destroy = true)
         {
-            List<Item> enumeratedItems = ListPool<Item>.Shared.Rent(ItemsValue);
+            List<Item> enumeratedItems = ListPool<Item>.Pool.Get(ItemsValue);
             int count = 0;
 
             foreach (Item item in enumeratedItems)
@@ -1770,7 +1984,7 @@ namespace Exiled.API.Features
                     ++count;
             }
 
-            ListPool<Item>.Shared.Return(enumeratedItems);
+            ListPool<Item>.Pool.Return(enumeratedItems);
             return count;
         }
 
@@ -1786,7 +2000,7 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="message">The message to be sent.</param>
         /// <param name="color">The message color.</param>
-        public void SendConsoleMessage(string message, string color) => ReferenceHub.characterClassManager.ConsolePrint(message, color);
+        public void SendConsoleMessage(string message, string color) => referenceHub.gameConsoleTransmission.SendToClient(message, color);
 
         /// <summary>
         /// Disconnects the player.
@@ -1799,6 +2013,19 @@ namespace Exiled.API.Features
         /// Resets the <see cref="Player"/>'s stamina.
         /// </summary>
         public void ResetStamina() => Stamina = StaminaStat.MaxValue;
+
+        /// <summary>
+        /// Gets a user's SCP preference.
+        /// </summary>
+        /// <param name="roleType">The SCP RoleType.</param>
+        /// <returns>A value from <c>-5</c> to <c>5</c>, representing a player's preference to play as the provided SCP. Will return <c>0</c> for invalid SCPs.</returns>
+        public int GetScpPreference(RoleTypeId roleType)
+        {
+            if (ScpPreferences.Preferences.TryGetValue(roleType, out int value))
+                return value;
+
+            return 0;
+        }
 
         /// <summary>
         /// Hurts the player.
@@ -1863,7 +2090,7 @@ namespace Exiled.API.Features
         public void Heal(float amount, bool overrideMaxHealth = false)
         {
             if (!overrideMaxHealth)
-                ((HealthStat)ReferenceHub.playerStats.StatModules[0]).ServerHeal(amount);
+                ReferenceHub.playerStats.GetModule<HealthStat>().ServerHeal(amount);
             else
                 Health += amount;
         }
@@ -1872,23 +2099,33 @@ namespace Exiled.API.Features
         /// Forces the player to use an item.
         /// </summary>
         /// <param name="usableItem">The ItemType to be used.</param>
-        public void UseItem(ItemType usableItem) => UseItem(Item.Create(usableItem));
+        /// <returns><see langword="true"/> if item was used successfully. Otherwise, <see langword="false"/>.</returns>
+        public bool UseItem(ItemType usableItem) => UseItem(Item.Create(usableItem));
 
         /// <summary>
         /// Forces the player to use an item.
         /// </summary>
         /// <param name="item">The item to be used.</param>
-        public void UseItem(Item item)
+        /// <returns><see langword="true"/> if item was used successfully. Otherwise, <see langword="false"/>.</returns>
+        public bool UseItem(Item item)
         {
             if (item is not Usable usableItem)
-                throw new Exception($"The provided item [{item.Type}] is not a usable item.");
+                return false;
 
             usableItem.Base.Owner = referenceHub;
             usableItem.Base.ServerOnUsingCompleted();
 
             if (usableItem.Base is not null)
                 usableItem.Destroy();
+
+            return true;
         }
+
+        /// <summary>
+        /// Kills the player.
+        /// </summary>
+        /// <param name="damageHandlerBase">The <see cref="DamageHandlerBase"/>.</param>
+        public void Kill(DamageHandlerBase damageHandlerBase) => ReferenceHub.playerStats.KillPlayer(damageHandlerBase);
 
         /// <summary>
         /// Kills the player.
@@ -1900,7 +2137,7 @@ namespace Exiled.API.Features
             if ((Role.Side != Side.Scp) && !string.IsNullOrEmpty(cassieAnnouncement))
                 Cassie.Message(cassieAnnouncement);
 
-            ReferenceHub.playerStats.KillPlayer(new CustomReasonDamageHandler(DamageTypeExtensions.TranslationConversion.FirstOrDefault(k => k.Value == damageType).Key.LogLabel, float.MaxValue, cassieAnnouncement));
+            ReferenceHub.playerStats.KillPlayer(new CustomReasonDamageHandler(DamageTypeExtensions.TranslationConversion.FirstOrDefault(k => k.Value == damageType).Key.LogLabel, -1, cassieAnnouncement));
         }
 
         /// <summary>
@@ -1913,17 +2150,38 @@ namespace Exiled.API.Features
             if ((Role.Side != Side.Scp) && !string.IsNullOrEmpty(cassieAnnouncement))
                 Cassie.Message(cassieAnnouncement);
 
-            ReferenceHub.playerStats.KillPlayer(new CustomReasonDamageHandler(deathReason, float.MaxValue, cassieAnnouncement));
+            ReferenceHub.playerStats.KillPlayer(new CustomReasonDamageHandler(deathReason, -1, cassieAnnouncement));
+        }
+
+        /// <summary>
+        /// Kills the player and vaporizes the body.
+        /// </summary>
+        /// <param name="attacker">The <see cref="Player"/> attacking player.</param>
+        /// <param name="cassieAnnouncement">The cassie announcement to make upon death.</param>
+        public void Vaporize(Player attacker = null, string cassieAnnouncement = "")
+        {
+            if ((Role.Side != Side.Scp) && !string.IsNullOrEmpty(cassieAnnouncement))
+                Cassie.Message(cassieAnnouncement);
+
+            Kill(new DisruptorDamageHandler(attacker?.Footprint ?? Footprint, -1));
         }
 
         /// <summary>
         /// Bans the player.
         /// </summary>
-        /// <param name="duration">The ban duration.</param>
+        /// <param name="duration">The ban duration, in seconds.</param>
         /// <param name="reason">The ban reason.</param>
         /// <param name="issuer">The ban issuer.</param>
         public void Ban(int duration, string reason, Player issuer = null)
             => BanPlayer.BanUser(ReferenceHub, issuer is null || issuer.ReferenceHub == null ? Server.Host.ReferenceHub : issuer.ReferenceHub, reason, duration);
+
+        /// <summary>
+        /// Bans the player.
+        /// </summary>
+        /// <param name="duration">The length of time to ban.</param>
+        /// <param name="reason">The ban reason.</param>
+        /// <param name="issuer">The ban issuer.</param>
+        public void Ban(TimeSpan duration, string reason, Player issuer = null) => Ban((int)duration.TotalSeconds, reason, issuer);
 
         /// <summary>
         /// Kicks the player.
@@ -1971,6 +2229,28 @@ namespace Exiled.API.Features
         }
 
         /// <summary>
+        /// Sends a message to the player's Remote Admin Chat.
+        /// </summary>
+        /// <param name="message">The message to be sent.</param>
+        /// <param name="channel">Indicates whether or not the message should be highlighted as success.</param>
+        /// <returns><see langword="true"/> if message was send; otherwise, <see langword="false"/>.</returns>
+        public bool SendStaffMessage(string message, EncryptedChannelManager.EncryptedChannel channel = EncryptedChannelManager.EncryptedChannel.AdminChat)
+        {
+            return ReferenceHub.encryptedChannelManager.TrySendMessageToClient("!" + NetId + message, channel);
+        }
+
+        /// <summary>
+        /// Sends a message to the player's Remote Admin Chat.
+        /// </summary>
+        /// <param name="message">The message to be sent.</param>
+        /// <param name="channel">Indicates whether or not the message should be highlighted as success.</param>
+        /// <returns><see langword="true"/> if message was send; otherwise, <see langword="false"/>.</returns>
+        public bool SendStaffPing(string message, EncryptedChannelManager.EncryptedChannel channel = EncryptedChannelManager.EncryptedChannel.AdminChat)
+        {
+            return ReferenceHub.encryptedChannelManager.TrySendMessageToClient("!0" + message, channel);
+        }
+
+        /// <summary>
         /// Shows a broadcast to the player. Doesn't get logged to the console and can be monospaced.
         /// </summary>
         /// <param name="duration">The broadcast duration.</param>
@@ -2010,8 +2290,12 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="ammoType">The <see cref="AmmoType"/> to be set.</param>
         /// <param name="amount">The amount of ammo to be set.</param>
-        public void SetAmmo(AmmoType ammoType, ushort amount) =>
-            Inventory.ServerSetAmmo(ammoType.GetItemType(), amount);
+        public void SetAmmo(AmmoType ammoType, ushort amount)
+        {
+            ItemType itemType = ammoType.GetItemType();
+            if (itemType is not ItemType.None)
+                Inventory.ServerSetAmmo(itemType, amount);
+        }
 
         /// <summary>
         /// Gets the ammo count of a specified <see cref="AmmoType">ammo type</see> in a player's inventory.
@@ -2028,15 +2312,15 @@ namespace Exiled.API.Features
         /// <param name="checkMinimals">Whether or not ammo limits will be taken into consideration.</param>
         /// <returns><see langword="true"/> if ammo was dropped; otherwise, <see langword="false"/>.</returns>
         public bool DropAmmo(AmmoType ammoType, ushort amount, bool checkMinimals = false) =>
-            Inventory.ServerDropAmmo(ammoType.GetItemType(), amount, checkMinimals);
+            Inventory.ServerDropAmmo(ammoType.GetItemType(), amount, checkMinimals).Any();
 
         /// <summary>
         /// Gets the maximum amount of ammo the player can hold, given the ammo <see cref="AmmoType"/>.
         /// This method factors in the armor the player is wearing, as well as server configuration.
-        /// For the maximum amount of ammo that can be given regardless of worn armor and server configuration, see <see cref="Ammo.AmmoLimit"/>.
+        /// For the maximum amount of ammo that can be given regardless of worn armor and server configuration, see <see cref="ServerConfigSynchronizer.AmmoLimit"/>.
         /// </summary>
         /// <param name="type">The <see cref="AmmoType"/> of the ammo to check.</param>
-        /// <returns>The maximum amount of ammo this player can carry. Guaranteed to be between <c>0</c> and <see cref="Ammo.AmmoLimit"/>.</returns>
+        /// <returns>The maximum amount of ammo this player can carry. Guaranteed to be between <c>0</c> and <see cref="ServerConfigSynchronizer.AmmoLimit"/>.</returns>
         public int GetAmmoLimit(AmmoType type) =>
             InventorySystem.Configs.InventoryLimits.GetAmmoLimit(type.GetItemType(), referenceHub);
 
@@ -2052,17 +2336,46 @@ namespace Exiled.API.Features
         /// Adds an item of the specified type with default durability(ammo/charge) and no mods to the player's inventory.
         /// </summary>
         /// <param name="itemType">The item to be added.</param>
+        /// <returns>The <see cref="Item"/> given to the player.</returns>
+        public Item AddItem(ItemType itemType)
+        {
+            if (itemType.GetFirearmType() is not FirearmType.None)
+            {
+                return AddItem(itemType.GetFirearmType(), null);
+            }
+
+            Item item = Item.Create(itemType);
+
+            AddItem(item);
+
+            return item;
+        }
+
+        /// <summary>
+        /// Adds an item of the specified type with default durability(ammo/charge) and no mods to the player's inventory.
+        /// </summary>
+        /// <param name="itemType">The item to be added.</param>
         /// <param name="identifiers">The attachments to be added to the item.</param>
         /// <returns>The <see cref="Item"/> given to the player.</returns>
+        [Obsolete("Use AddItem(ItemType) or AddItem(FirearmType, IEnumerable<AttachmentIdentifier>)", true)]
         public Item AddItem(ItemType itemType, IEnumerable<AttachmentIdentifier> identifiers = null)
+            => itemType.GetFirearmType() is FirearmType.None ? AddItem(itemType) : AddItem(itemType.GetFirearmType(), identifiers);
+
+        /// <summary>
+        /// Adds an firearm of the specified type with default durability(ammo/charge) and no mods to the player's inventory.
+        /// </summary>
+        /// <param name="firearmType">The firearm to be added.</param>
+        /// <param name="identifiers">The attachments to be added to the item.</param>
+        /// <returns>The <see cref="Item"/> given to the player.</returns>
+        public Item AddItem(FirearmType firearmType, IEnumerable<AttachmentIdentifier> identifiers)
         {
-            Item item = Item.Get(Inventory.ServerAddItem(itemType));
+            Item item = Item.Create(firearmType.GetItemType());
 
             if (item is Firearm firearm)
             {
                 if (identifiers is not null)
                     firearm.AddAttachment(identifiers);
-                else if (Preferences is not null && Preferences.TryGetValue(itemType.GetFirearmType(), out AttachmentIdentifier[] attachments))
+                else if (Preferences is not null && Preferences.TryGetValue(firearmType, out AttachmentIdentifier[] attachments))
                     firearm.Base.ApplyAttachmentsCode(attachments.GetAttachmentsCode(), true);
 
                 FirearmStatusFlags flags = FirearmStatusFlags.MagazineInserted;
@@ -2072,6 +2385,8 @@ namespace Exiled.API.Features
 
                 firearm.Base.Status = new FirearmStatus(firearm.MaxAmmo, flags, firearm.Base.GetCurrentAttachmentsCode());
             }
+
+            AddItem(item);
 
             return item;
         }
@@ -2101,7 +2416,18 @@ namespace Exiled.API.Features
         /// <param name="amount">The amount of items to be added.</param>
         /// <param name="identifiers">The attachments to be added to the item.</param>
         /// <returns>An <see cref="IEnumerable{Item}"/> containing the items given.</returns>
+        [Obsolete("Use AddItem(ItemType, int) or AddItem(FirearmType, int, IEnumerable<AttachmentIdentifier>)", true)]
         public IEnumerable<Item> AddItem(ItemType itemType, int amount, IEnumerable<AttachmentIdentifier> identifiers)
+            => itemType.GetFirearmType() is FirearmType.None ? AddItem(itemType, amount) : AddItem(itemType.GetFirearmType(), amount, identifiers);
+
+        /// <summary>
+        /// Adds the amount of firearms of the specified type with default durability(ammo/charge) and no mods to the player's inventory.
+        /// </summary>
+        /// <param name="firearmType">The item to be added.</param>
+        /// <param name="amount">The amount of items to be added.</param>
+        /// <param name="identifiers">The attachments to be added to the item.</param>
+        /// <returns>An <see cref="IEnumerable{Item}"/> containing the items given.</returns>
+        public IEnumerable<Item> AddItem(FirearmType firearmType, int amount, IEnumerable<AttachmentIdentifier> identifiers)
         {
             List<Item> items = new(amount > 0 ? amount : 0);
 
@@ -2110,7 +2436,7 @@ namespace Exiled.API.Features
                 IEnumerable<AttachmentIdentifier> attachmentIdentifiers = identifiers.ToList();
 
                 for (int i = 0; i < amount; i++)
-                    items.Add(AddItem(itemType, attachmentIdentifiers));
+                    items.Add(AddItem(firearmType, attachmentIdentifiers));
             }
 
             return items;
@@ -2123,13 +2449,13 @@ namespace Exiled.API.Features
         /// <returns>An <see cref="IEnumerable{Item}"/> containing the items given.</returns>
         public IEnumerable<Item> AddItem(IEnumerable<ItemType> items)
         {
-            List<ItemType> enumeratedItems = ListPool<ItemType>.Shared.Rent(items);
+            List<ItemType> enumeratedItems = ListPool<ItemType>.Pool.Get(items);
             List<Item> returnedItems = new(enumeratedItems.Count);
 
             foreach (ItemType type in enumeratedItems)
                 returnedItems.Add(AddItem(type));
 
-            ListPool<ItemType>.Shared.Return(enumeratedItems);
+            ListPool<ItemType>.Pool.Return(enumeratedItems);
             return returnedItems;
         }
 
@@ -2138,11 +2464,27 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="items">The <see cref="Dictionary{TKey, TValue}"/> of <see cref="ItemType"/> and <see cref="IEnumerable{T}"/> of <see cref="AttachmentIdentifier"/> to be added.</param>
         /// <returns>An <see cref="IEnumerable{Item}"/> containing the items given.</returns>
+        [Obsolete("Use AddItem(Dictionary<FirearmType, IEnumerable<AttachmentIdentifier>>) instead of this", true)]
         public IEnumerable<Item> AddItem(Dictionary<ItemType, IEnumerable<AttachmentIdentifier>> items)
         {
             List<Item> returnedItems = new(items.Count);
 
             foreach (KeyValuePair<ItemType, IEnumerable<AttachmentIdentifier>> item in items)
+                returnedItems.Add(AddItem(item.Key, item.Value));
+
+            return returnedItems;
+        }
+
+        /// <summary>
+        /// Adds the list of items of the specified type with default durability(ammo/charge) and no mods to the player's inventory.
+        /// </summary>
+        /// <param name="items">The <see cref="Dictionary{TKey, TValue}"/> of <see cref="ItemType"/> and <see cref="IEnumerable{T}"/> of <see cref="AttachmentIdentifier"/> to be added.</param>
+        /// <returns>An <see cref="IEnumerable{Item}"/> containing the items given.</returns>
+        public IEnumerable<Item> AddItem(Dictionary<FirearmType, IEnumerable<AttachmentIdentifier>> items)
+        {
+            List<Item> returnedItems = new(items.Count);
+
+            foreach (KeyValuePair<FirearmType, IEnumerable<AttachmentIdentifier>> item in items)
                 returnedItems.Add(AddItem(item.Key, item.Value));
 
             return returnedItems;
@@ -2156,9 +2498,6 @@ namespace Exiled.API.Features
         {
             try
             {
-                if (item.Base is null)
-                    item = Item.Create(item.Type);
-
                 AddItem(item.Base, item);
             }
             catch (Exception e)
@@ -2176,9 +2515,6 @@ namespace Exiled.API.Features
         {
             try
             {
-                if (item.Base is null)
-                    item = new Firearm(item.Type);
-
                 if (identifiers is not null)
                     item.AddAttachment(identifiers);
 
@@ -2229,18 +2565,12 @@ namespace Exiled.API.Features
 
                 item.ChangeOwner(item.Owner, this);
 
-                if (Inventory.isLocalPlayer && itemBase is IAcquisitionConfirmationTrigger acquisitionConfirmationTrigger)
+                if (itemBase is IAcquisitionConfirmationTrigger acquisitionConfirmationTrigger)
                 {
-                    acquisitionConfirmationTrigger.ServerConfirmAcqusition();
-                    acquisitionConfirmationTrigger.AcquisitionAlreadyReceived = true;
+                    acquisitionConfirmationTrigger.AcquisitionAlreadyReceived = false;
                 }
 
-                // Dont care, didnt ask, ratio
-                Timing.CallDelayed(0.02f, () =>
-                {
-                    if (item.Type is ItemType.SCP330 && item.Base != null)
-                        ((Scp330)item).Base.ServerRefreshBag();
-                });
+                typeof(InventoryExtensions).InvokeStaticEvent(nameof(InventoryExtensions.OnItemAdded), new object[] { ReferenceHub, itemBase, null });
 
                 ItemsValue.Add(item);
 
@@ -2260,14 +2590,8 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="item">The item to be added.</param>
         /// <param name="amount">The amount of items to be added.</param>
-        public void AddItem(Item item, int amount)
-        {
-            if (amount > 0)
-            {
-                for (int i = 0; i < amount; i++)
-                    AddItem(item);
-            }
-        }
+        [Obsolete("Removed this method can't be functional")]
+        public void AddItem(Item item, int amount) => _ = item;
 
         /// <summary>
         /// Adds the <paramref name="amount"/> of items to the player's inventory.
@@ -2275,14 +2599,8 @@ namespace Exiled.API.Features
         /// <param name="firearm">The firearm to be added.</param>
         /// <param name="amount">The amount of items to be added.</param>
         /// <param name="identifiers">The attachments to be added to the item.</param>
-        public void AddItem(Firearm firearm, int amount, IEnumerable<AttachmentIdentifier> identifiers)
-        {
-            if (amount > 0)
-            {
-                for (int i = 0; i < amount; i++)
-                    AddItem(firearm, identifiers);
-            }
-        }
+        [Obsolete("Removed this method can't be functional")]
+        public void AddItem(Firearm firearm, int amount, IEnumerable<AttachmentIdentifier> identifiers) => _ = firearm;
 
         /// <summary>
         /// Adds the list of items to the player's inventory.
@@ -2344,18 +2662,10 @@ namespace Exiled.API.Features
         /// <param name="newItems">The new items that have to be added to the inventory.</param>
         public void ResetInventory(IEnumerable<ItemType> newItems)
         {
-            ClearInventory();
+            ClearItems();
 
-            Timing.CallDelayed(
-                0.5f,
-                () =>
-                {
-                    if (newItems.IsEmpty())
-                        return;
-
-                    foreach (ItemType item in newItems)
-                        AddItem(item);
-                });
+            foreach (ItemType item in newItems)
+                AddItem(item);
         }
 
         /// <summary>
@@ -2364,13 +2674,10 @@ namespace Exiled.API.Features
         /// <param name="newItems">The new items that have to be added to the inventory.</param>
         public void ResetInventory(IEnumerable<Item> newItems)
         {
-            ClearInventory();
+            ClearItems();
 
-            if (newItems.Any())
-            {
-                foreach (Item item in newItems)
-                    AddItem(item.Base is null ? new Item(item.Type) : item);
-            }
+            foreach (Item item in newItems)
+                AddItem(item);
         }
 
         /// <summary>
@@ -2382,8 +2689,36 @@ namespace Exiled.API.Features
         /// <seealso cref="DropItems()"/>
         public void ClearInventory(bool destroy = true)
         {
+            ClearItems(destroy);
+            ClearAmmo();
+        }
+
+        /// <summary>
+        /// Clears the player's items.
+        /// </summary>
+        /// <param name="destroy">Whether or not to fully destroy the old items.</param>
+        /// <seealso cref="ResetInventory(IEnumerable{Item})"/>
+        /// <seealso cref="ResetInventory(IEnumerable{ItemType})"/>
+        /// <seealso cref="DropItems()"/>
+        public void ClearItems(bool destroy = true)
+        {
+            if (CurrentArmor is not null)
+                CurrentArmor.RemoveExcessOnDrop = true;
+
             while (Items.Count > 0)
                 RemoveItem(Items.ElementAt(0), destroy);
+        }
+
+        /// <summary>
+        /// Clears all ammo in the inventory.
+        /// </summary>
+        /// <seealso cref="ResetInventory(IEnumerable{Item})"/>
+        /// <seealso cref="SetAmmo(AmmoType, ushort)"/>
+        /// <seealso cref="DropItems()"/>
+        public void ClearAmmo()
+        {
+            ReferenceHub.inventory.UserInventory.ReserveAmmo.Clear();
+            ReferenceHub.inventory.SendAmmoNextFrame = true;
         }
 
         /// <summary>
@@ -2429,6 +2764,7 @@ namespace Exiled.API.Features
         /// <param name="duration">The duration the text will be on screen.</param>
         public void ShowHint(string message, float duration = 3f)
         {
+            message ??= string.Empty;
             HintDisplay.Show(new TextHint(message, new HintParameter[] { new StringHintParameter(message) }, null, duration));
         }
 
@@ -2447,7 +2783,7 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="size">The size of the hitmarker, ranging from <c>0</c> to <c><see cref="Hitmarker.MaxSize"/></c>).</param>
         public void ShowHitMarker(float size = 1f) =>
-            Hitmarker.SendHitmarker(Connection, size > Hitmarker.MaxSize ? Hitmarker.MaxSize : size);
+            Hitmarker.SendHitmarkerDirectly(ReferenceHub, size);
 
         /// <summary>
         /// Safely gets an <see cref="object"/> from <see cref="SessionVariables"/>, then casts it to <typeparamref name="T"/>.
@@ -2560,7 +2896,18 @@ namespace Exiled.API.Features
         /// <param name="addDurationIfActive">If the effect is already active, setting to <see langword="true"/> will add this duration onto the effect.</param>
         /// <returns>A bool indicating whether or not the effect was valid and successfully enabled.</returns>
         public bool EnableEffect<T>(float duration = 0f, bool addDurationIfActive = false)
-            where T : StatusEffectBase => ReferenceHub.playerEffectsController.EnableEffect<T>(duration, addDurationIfActive);
+                    where T : StatusEffectBase => EnableEffect<T>(1, duration, addDurationIfActive);
+
+        /// <summary>
+        /// Enables a <see cref="StatusEffectBase">status effect</see> on the player.
+        /// </summary>
+        /// <typeparam name="T">The <see cref="StatusEffectBase"/> to enable.</typeparam>
+        /// <param name="intensity">The intensity of the effect will be active for.</param>
+        /// <param name="duration">The amount of time the effect will be active for.</param>
+        /// <param name="addDurationIfActive">If the effect is already active, setting to <see langword="true"/> will add this duration onto the effect.</param>
+        /// <returns>A bool indicating whether or not the effect was valid and successfully enabled.</returns>
+        public bool EnableEffect<T>(byte intensity, float duration = 0f, bool addDurationIfActive = false)
+            where T : StatusEffectBase => ReferenceHub.playerEffectsController.ChangeState<T>(intensity, duration, addDurationIfActive);
 
         /// <summary>
         /// Enables a <see cref="StatusEffectBase">status effect</see> on the player.
@@ -2570,7 +2917,25 @@ namespace Exiled.API.Features
         /// <param name="addDurationIfActive">If the effect is already active, setting to <see langword="true"/> will add this duration onto the effect.</param>
         /// <returns>A bool indicating whether or not the effect was valid and successfully enabled.</returns>
         public bool EnableEffect(StatusEffectBase statusEffect, float duration = 0f, bool addDurationIfActive = false)
-            => EnableEffect(statusEffect.GetType().Name, duration, addDurationIfActive).IsEnabled;
+            => EnableEffect(statusEffect, 1, duration, addDurationIfActive);
+
+        /// <summary>
+        /// Enables a <see cref="StatusEffectBase">status effect</see> on the player.
+        /// </summary>
+        /// <param name="statusEffect">The name of the <see cref="StatusEffectBase"/> to enable.</param>
+        /// <param name="intensity">The intensity of the effect will be active for.</param>
+        /// <param name="duration">The amount of time the effect will be active for.</param>
+        /// <param name="addDurationIfActive">If the effect is already active, setting to <see langword="true"/> will add this duration onto the effect.</param>
+        /// <returns>A bool indicating whether or not the effect was valid and successfully enabled.</returns>
+        public bool EnableEffect(StatusEffectBase statusEffect, byte intensity, float duration = 0f, bool addDurationIfActive = false)
+        {
+            if (statusEffect is null)
+                return false;
+
+            statusEffect.ServerSetState(intensity, duration, addDurationIfActive);
+
+            return statusEffect is not null && statusEffect.IsEnabled;
+        }
 
         /// <summary>
         /// Enables a <see cref="StatusEffectBase">status effect</see> on the player.
@@ -2580,7 +2945,18 @@ namespace Exiled.API.Features
         /// <param name="addDurationIfActive">If the effect is already active, setting to <see langword="true"/> will add this duration onto the effect.</param>
         /// <returns>The <see cref="StatusEffectBase"/> instance of the activated effect.</returns>
         public StatusEffectBase EnableEffect(string effectName, float duration = 0f, bool addDurationIfActive = false)
-            => ReferenceHub.playerEffectsController.ChangeState(effectName, 1, duration, addDurationIfActive);
+            => EnableEffect(effectName, 1, duration, addDurationIfActive);
+
+        /// <summary>
+        /// Enables a <see cref="StatusEffectBase">status effect</see> on the player.
+        /// </summary>
+        /// <param name="effectName">The name of the <see cref="StatusEffectBase"/> to enable.</param>
+        /// <param name="intensity">The intensity of the effect will be active for.</param>
+        /// <param name="duration">The amount of time the effect will be active for.</param>
+        /// <param name="addDurationIfActive">If the effect is already active, setting to <see langword="true"/> will add this duration onto the effect.</param>
+        /// <returns>The <see cref="StatusEffectBase"/> instance of the activated effect.</returns>
+        public StatusEffectBase EnableEffect(string effectName, byte intensity, float duration = 0f, bool addDurationIfActive = false)
+            => ReferenceHub.playerEffectsController.ChangeState(effectName, intensity, duration, addDurationIfActive);
 
         /// <summary>
         /// Enables a <see cref="EffectType">status effect</see> on the player.
@@ -2589,9 +2965,39 @@ namespace Exiled.API.Features
         /// <param name="duration">The amount of time the effect will be active for.</param>
         /// <param name="addDurationIfActive">If the effect is already active, setting to <see langword="true"/> will add this duration onto the effect.</param>
         public void EnableEffect(EffectType type, float duration = 0f, bool addDurationIfActive = false)
+            => EnableEffect(type, 1, duration, addDurationIfActive);
+
+        /// <summary>
+        /// Enables a <see cref="EffectType">status effect</see> on the player.
+        /// </summary>
+        /// <param name="type">The <see cref="EffectType"/> to enable.</param>
+        /// <param name="intensity">The intensity of the effect will be active for.</param>
+        /// <param name="duration">The amount of time the effect will be active for.</param>
+        /// <param name="addDurationIfActive">If the effect is already active, setting to <see langword="true"/> will add this duration onto the effect.</param>
+        /// <returns>return if the effect has been Enable.</returns>
+        public bool EnableEffect(EffectType type, byte intensity, float duration = 0f, bool addDurationIfActive = false)
+            => TryGetEffect(type, out StatusEffectBase statusEffect) && EnableEffect(statusEffect, intensity, duration, addDurationIfActive);
+
+        /// <summary>
+        /// Enables a <see cref="Effect">status effect</see> on the player.
+        /// </summary>
+        /// <param name="effect">The <see cref="Effect"/> to enable.</param>
+        [Obsolete("Use SyncEffect(Effect) instead of this")]
+        public void EnableEffect(Effect effect) => SyncEffect(effect);
+
+        /// <summary>
+        /// Syncs the <see cref="Effect">status effect</see> on the player.
+        /// </summary>
+        /// <param name="effect">The <see cref="Effect"/> to sync.</param>
+        public void SyncEffect(Effect effect)
         {
-            if (TryGetEffect(type, out StatusEffectBase statusEffect))
-                EnableEffect(statusEffect, duration, addDurationIfActive);
+            if (effect.IsEnabled)
+            {
+                EnableEffect(effect.Type, effect.Duration, effect.AddDurationIfActive);
+
+                if (effect.Intensity > 0)
+                    ChangeEffectIntensity(effect.Type, effect.Intensity, effect.Duration);
+            }
         }
 
         /// <summary>
@@ -2602,12 +3008,23 @@ namespace Exiled.API.Features
         /// <param name="addDurationIfActive">If the effect is already active, setting to <see langword="true"/> will add this duration onto the effect.</param>
         /// <returns>A <see cref="EffectType"/> that was given to the player.</returns>
         public EffectType ApplyRandomEffect(EffectCategory category = EffectCategory.None, float duration = 0f, bool addDurationIfActive = false)
+            => ApplyRandomEffect(category, 1, duration, addDurationIfActive);
+
+        /// <summary>
+        /// Enables a random <see cref="EffectType"/> on the player.
+        /// </summary>
+        /// <param name="category">An optional category to filter the applied effect. Set to <see cref="EffectCategory.None"/> for any effect.</param>
+        /// <param name="intensity">The intensity of the effect will be active for.</param>
+        /// <param name="duration">The amount of time the effect will be active for.</param>
+        /// <param name="addDurationIfActive">If the effect is already active, setting to <see langword="true"/> will add this duration onto the effect.</param>
+        /// <returns>A <see cref="EffectType"/> that was given to the player.</returns>
+        public EffectType ApplyRandomEffect(EffectCategory category, byte intensity, float duration = 0f, bool addDurationIfActive = false)
         {
             Array effectTypes = Enum.GetValues(typeof(EffectType));
             IEnumerable<EffectType> validEffects = effectTypes.ToArray<EffectType>().Where(effect => effect.GetCategories().HasFlag(category));
-            EffectType effectType = validEffects.ElementAt(Random.Range(0, effectTypes.Length));
+            EffectType effectType = validEffects.GetRandomValue();
 
-            EnableEffect(effectType, duration, addDurationIfActive);
+            EnableEffect(effectType, intensity, duration, addDurationIfActive);
 
             return effectType;
         }
@@ -2628,14 +3045,32 @@ namespace Exiled.API.Features
         }
 
         /// <summary>
+        /// Enables a <see cref="IEnumerable{T}"/> of <see cref="Effect"/> on the player.
+        /// </summary>
+        /// <param name="effects">The <see cref="IEnumerable{T}"/> of <see cref="Effect"/> to enable.</param>
+        [Obsolete("Use SyncEffects(IEnumerable<Effect>) instead of this")]
+        public void EnableEffects(IEnumerable<Effect> effects) => SyncEffects(effects);
+
+        /// <summary>
+        /// Syncs a <see cref="IEnumerable{T}"/> of <see cref="Effect"/> on the player.
+        /// </summary>
+        /// <param name="effects">The <see cref="IEnumerable{T}"/> of <see cref="Effect"/> to enable.</param>
+        public void SyncEffects(IEnumerable<Effect> effects)
+        {
+            foreach (Effect effect in effects)
+                SyncEffect(effect);
+        }
+
+        /// <summary>
         /// Gets an instance of <see cref="StatusEffectBase"/> by <see cref="EffectType"/>.
         /// </summary>
-        /// <param name="type">The <see cref="EffectType"/>.</param>
+        /// <param name="effectType">The <see cref="EffectType"/>.</param>
         /// <returns>The <see cref="StatusEffectBase"/>.</returns>
-        public StatusEffectBase GetEffect(EffectType type)
+        public StatusEffectBase GetEffect(EffectType effectType)
         {
-            ReferenceHub.playerEffectsController._effectsByType.TryGetValue(type.Type(), out StatusEffectBase playerEffect);
-
+            if (!effectType.TryGetType(out Type type))
+                return null;
+            ReferenceHub.playerEffectsController._effectsByType.TryGetValue(type, out StatusEffectBase playerEffect);
             return playerEffect;
         }
 
@@ -2704,7 +3139,7 @@ namespace Exiled.API.Features
             if (TryGetEffect(type, out StatusEffectBase statusEffect))
             {
                 statusEffect.Intensity = intensity;
-                statusEffect.ServerChangeDuration(duration, true);
+                statusEffect.ServerChangeDuration(duration, false);
             }
         }
 
@@ -2731,8 +3166,8 @@ namespace Exiled.API.Features
         /// </summary>
         /// <param name="isActive">Whether or not the tantrum will apply the <see cref="EffectType.Stained"/> effect.</param>
         /// <remarks>If <paramref name="isActive"/> is <see langword="true"/>, the tantrum is moved slightly up from its original position. Otherwise, the collision will not be detected and the slowness will not work.</remarks>
-        /// <returns>The tantrum's <see cref="GameObject"/>.</returns>
-        public GameObject PlaceTantrum(bool isActive = true) => Map.PlaceTantrum(Position, isActive);
+        /// <returns>The <see cref="TantrumHazard"/> instance..</returns>
+        public TantrumHazard PlaceTantrum(bool isActive = true) => Map.PlaceTantrum(Position, isActive);
 
         /// <summary>
         /// Gives a new <see cref="AhpStat">to the player</see>.
@@ -2781,102 +3216,80 @@ namespace Exiled.API.Features
         public void Teleport(Vector3 position) => Position = position;
 
         /// <summary>
-        /// Teleports the player to the given object.
+        /// Teleports the player to the given object, with no offset.
+        /// </summary>
+        /// <param name="obj">The object to teleport to.</param>
+        public void Teleport(object obj)
+            => Teleport(obj, Vector3.zero);
+
+        /// <summary>
+        /// Teleports the player to the given object, offset by the defined offset value.
         /// </summary>
         /// <param name="obj">The object to teleport the player to.</param>
-        public void Teleport(object obj)
+        /// <param name="offset">The offset to teleport.</param>
+        public void Teleport(object obj, Vector3 offset)
         {
             switch (obj)
             {
-                case Camera camera:
-                    Teleport(camera.Position + Vector3.down);
-                    break;
-                case Door door:
-                    Teleport(door.Position + Vector3.up);
-                    break;
-                case DoorType doorType:
-                    Teleport(Door.Get(doorType).Position + Vector3.up);
-                    break;
-                case SpawnLocationType sp:
-                    Teleport(sp.GetPosition());
-                    break;
-                case Spawn.SpawnPoint sp:
-                    Teleport(sp.Position);
-                    break;
-                case RoomType roomType:
-                    Teleport(Room.Get(roomType).Position + Vector3.up);
-                    break;
-                case Enums.CameraType cameraType:
-                    Teleport(Camera.Get(cameraType).Position);
-                    break;
-                case ElevatorType elevatorType:
-                    Teleport(Lift.Get(elevatorType).Position + Vector3.up);
-                    break;
-                case Room room:
-                    Teleport(room.Position + Vector3.up);
-                    break;
                 case TeslaGate teslaGate:
                     Teleport(
-                        teslaGate.Position + Vector3.up +
+                        teslaGate.Position + offset + Vector3.up +
                         (teslaGate.Room.Transform.rotation == new Quaternion(0f, 0f, 0f, 1f)
                             ? new Vector3(3, 0, 0)
                             : new Vector3(0, 0, 3)));
                     break;
-                case Scp914Controller scp914:
-                    Teleport(scp914._knobTransform.position + Vector3.up);
+                case IPosition positionObject:
+                    Teleport(positionObject.Position + Vector3.up + offset);
                     break;
-                case Player player:
-                    Teleport(player.Position);
+                case DoorType doorType:
+                    Teleport(Door.Get(doorType).Position + Vector3.up + offset);
+                    break;
+                case SpawnLocationType sp:
+                    Teleport(sp.GetPosition() + offset);
+                    break;
+                case RoomType roomType:
+                    Teleport(Room.Get(roomType).Position + Vector3.up + offset);
+                    break;
+                case Enums.CameraType cameraType:
+                    Teleport(Camera.Get(cameraType).Position + offset);
+                    break;
+                case ElevatorType elevatorType:
+                    Teleport(Lift.Get(elevatorType).Position + Vector3.up + offset);
+                    break;
+                case Scp914Controller scp914:
+                    Teleport(scp914._knobTransform.position + Vector3.up + offset);
                     break;
                 case Role role:
                     if (role.Owner is not null)
-                        Teleport(role.Owner.Position);
+                        Teleport(role.Owner.Position + offset);
                     else
                         Log.Warn($"{nameof(Teleport)}: {Assembly.GetCallingAssembly().GetName().Name}: Invalid role teleport (role is missing Owner).");
                     break;
-                case Pickup pickup:
-                    Teleport(pickup.Position + Vector3.up);
-                    break;
-                case Ragdoll ragdoll:
-                    Teleport(ragdoll.Position + Vector3.up);
-                    break;
                 case Locker locker:
-                    Teleport(locker.transform.position + Vector3.up);
+                    Teleport(locker.transform.position + Vector3.up + offset);
                     break;
                 case LockerChamber chamber:
-                    Teleport(chamber._spawnpoint.position + Vector3.up);
-                    break;
-                case Generator generator:
-                    Teleport(generator.Position + Vector3.up);
-                    break;
-                case Window window:
-                    Teleport(window.Position + Vector3.up);
-                    break;
-                case Toys.AdminToy toy:
-                    Teleport(toy.Position + Vector3.up);
+                    Teleport(chamber._spawnpoint.position + Vector3.up + offset);
                     break;
                 case ElevatorChamber elevator:
-                    Teleport(elevator.transform.position + Vector3.up);
-                    break;
-                case EActor ea:
-                    Teleport(ea.Position + Vector3.up);
+                    Teleport(elevator.transform.position + Vector3.up + offset);
                     break;
                 case Item item:
                     if (item.Owner is not null)
-                        Teleport(item.Owner.Position);
+                        Teleport(item.Owner.Position + offset);
                     else
                         Log.Warn($"{nameof(Teleport)}: {Assembly.GetCallingAssembly().GetName().Name}: Invalid item teleport (item is missing Owner).");
                     break;
 
                 // Unity
                 case Vector3 v3: // I wouldn't be surprised if someone calls this method with a Vector3.
-                    Teleport(v3);
+                    Teleport(v3 + offset);
                     break;
                 case Component comp:
-                    Teleport(comp.transform.position + Vector3.up);
+                    Teleport(comp.transform.position + Vector3.up + offset);
                     break;
                 case GameObject go:
-                    Teleport(go.transform.position + Vector3.up);
+                    Teleport(go.transform.position + Vector3.up + offset);
                     break;
 
                 default:
@@ -2891,22 +3304,20 @@ namespace Exiled.API.Features
         /// <param name="type">Object for teleport.</param>
         public void RandomTeleport(Type type)
         {
-            LockerChamber[] chambers;
-
             object randomObject = type.Name switch
             {
-                nameof(Camera) => Camera.List.ElementAt(Random.Range(0, Camera.Camera079ToCamera.Count)),
+                nameof(Camera) => Camera.List.GetRandomValue(),
                 nameof(Door) => Door.Random(),
-                nameof(Room) => Room.List.ElementAt(Random.Range(0, Room.RoomIdentifierToRoom.Count)),
-                nameof(TeslaGate) => TeslaGate.List.ElementAt(Random.Range(0, TeslaGate.BaseTeslaGateToTeslaGate.Count)),
-                nameof(Player) => Dictionary.Values.ElementAt(Random.Range(0, Dictionary.Count)),
-                nameof(Pickup) => Pickup.BaseToPickup.ElementAt(Random.Range(0, Pickup.BaseToPickup.Count)).Value,
-                nameof(Ragdoll) => Ragdoll.List.ElementAt(Random.Range(0, Ragdoll.BasicRagdollToRagdoll.Count)),
+                nameof(Room) => Room.List.GetRandomValue(),
+                nameof(TeslaGate) => TeslaGate.List.GetRandomValue(),
+                nameof(Player) => Dictionary.Values.GetRandomValue(),
+                nameof(Pickup) => Pickup.BaseToPickup.GetRandomValue().Value,
+                nameof(Ragdoll) => Ragdoll.List.GetRandomValue(),
                 nameof(Locker) => Map.GetRandomLocker(),
-                nameof(Generator) => Generator.List.ElementAt(Random.Range(0, Generator.Scp079GeneratorToGenerator.Count)),
-                nameof(Window) => Window.List.ElementAt(Random.Range(0, Window.BreakableWindowToWindow.Count)),
+                nameof(Generator) => Generator.List.GetRandomValue(),
+                nameof(Window) => Window.List.GetRandomValue(),
                 nameof(Scp914) => Scp914.Scp914Controller,
-                nameof(LockerChamber) => (chambers = Map.GetRandomLocker().Chambers)[Random.Range(0, chambers.Length)],
+                nameof(LockerChamber) => Map.GetRandomLocker().Chambers.GetRandomValue(),
                 _ => null,
             };
 
@@ -2924,7 +3335,7 @@ namespace Exiled.API.Features
             if (array.Length == 0)
                 return;
 
-            RandomTeleport(array[Random.Range(0, array.Length)]);
+            RandomTeleport(array.GetRandomValue());
         }
 
         /// <summary>
@@ -3018,12 +3429,38 @@ namespace Exiled.API.Features
             : componentsInChildren.Any(comp => type == comp.GetType());
 
         /// <summary>
+        /// Get the time cooldown on this ItemType.
+        /// </summary>
+        /// <param name="itemType">The itemtypes to choose for getting cooldown.</param>
+        /// <returns>Return the time in seconds of the cooldowns.</returns>
+        public float GetCooldownItem(ItemType itemType)
+            => UsableItemsController.GetHandler(ReferenceHub).PersonalCooldowns.TryGetValue(itemType, out float value) ? value : -1;
+
+        /// <summary>
         /// Set the time cooldown on this ItemType.
         /// </summary>
         /// <param name="time">The times for the cooldown.</param>
         /// <param name="itemType">The itemtypes to choose for being cooldown.</param>
-        public void GetCooldownItem(float time, ItemType itemType)
+        public void SetCooldownItem(float time, ItemType itemType)
             => UsableItemsController.GetHandler(ReferenceHub).PersonalCooldowns[itemType] = Time.timeSinceLevelLoad + time;
+
+        /// <summary>
+        /// Explode the player.
+        /// </summary>
+        public void Explode() => ExplosionUtils.ServerExplode(ReferenceHub);
+
+        /// <summary>
+        /// Explode the player.
+        /// </summary>
+        /// <param name="projectileType">The projectile that will create the explosion.</param>
+        /// <param name="attacker">The Player that will causing the explosion.</param>
+        public void Explode(ProjectileType projectileType, Player attacker = null) => Map.Explode(Position, projectileType, attacker);
+
+        /// <summary>
+        /// Spawn projectile effect on the player.
+        /// </summary>
+        /// <param name="projectileType">The projectile that will create the effect.</param>
+        public void ExplodeEffect(ProjectileType projectileType) => Map.ExplodeEffect(Position, projectileType);
 
         /// <summary>
         /// Converts the player in a human-readable format.

@@ -11,27 +11,27 @@ namespace Exiled.Events.Patches.Events.Warhead
     using System.Reflection.Emit;
 
     using API.Features;
-
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Warhead;
 
     using HarmonyLib;
-
-    using NorthwoodLib.Pools;
 
     using static HarmonyLib.AccessTools;
 
     using Warhead = Handlers.Warhead;
 
     /// <summary>
-    ///     Patches <see cref="PlayerInteract.UserCode_CmdUsePanel" />.
-    ///     Adds the <see cref="Warhead.ChangingLeverStatus" /> event.
+    /// Patches <see cref="PlayerInteract.UserCode_CmdUsePanel__AlphaPanelOperations" />.
+    /// Adds the <see cref="Warhead.ChangingLeverStatus" /> event.
     /// </summary>
-    [HarmonyPatch(typeof(PlayerInteract), nameof(PlayerInteract.UserCode_CmdUsePanel))]
+    [EventPatch(typeof(Warhead), nameof(Warhead.ChangingLeverStatus))]
+    [HarmonyPatch(typeof(PlayerInteract), nameof(PlayerInteract.UserCode_CmdUsePanel__AlphaPanelOperations))]
     internal static class ChangingLeverStatus
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
@@ -71,7 +71,7 @@ namespace Exiled.Events.Patches.Events.Warhead
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

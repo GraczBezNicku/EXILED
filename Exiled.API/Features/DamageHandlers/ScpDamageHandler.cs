@@ -38,8 +38,14 @@ namespace Exiled.API.Features.DamageHandlers
             {
                 switch (Base)
                 {
-                    case Scp096DamageHandler _:
+                    case Scp096DamageHandler:
                         return DamageType.Scp096;
+                    case Scp049DamageHandler scp049DamageHandler:
+                        return scp049DamageHandler.DamageSubType switch
+                        {
+                            Scp049DamageHandler.AttackType.Scp0492 => DamageType.Scp0492,
+                            _ => DamageType.Scp049,
+                        };
                     case BaseScpHandler scp:
                         {
                             DeathTranslation translation = DeathTranslations.TranslationsById[scp._translationId];

@@ -10,6 +10,8 @@ namespace Exiled.Events.Patches.Events.Scp330
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Scp330;
 
     using Handlers;
@@ -18,22 +20,22 @@ namespace Exiled.Events.Patches.Events.Scp330
 
     using InventorySystem.Items.Usables.Scp330;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     using Player = API.Features.Player;
 
     /// <summary>
-    ///     Patches <see cref="Scp330Bag.ServerOnUsingCompleted" />.
-    ///     Adds the <see cref="Scp330.EatingScp330" /> and <see cref="Scp330.EatenScp330" /> event.
+    /// Patches <see cref="Scp330Bag.ServerOnUsingCompleted" />.
+    /// Adds the <see cref="Scp330.EatingScp330" /> and <see cref="Scp330.EatenScp330" /> event.
     /// </summary>
+    [EventPatch(typeof(Scp330), nameof(Scp330.EatingScp330))]
+    [EventPatch(typeof(Scp330), nameof(Scp330.EatenScp330))]
     [HarmonyPatch(typeof(Scp330Bag), nameof(Scp330Bag.ServerOnUsingCompleted))]
     internal static class EatingScp330
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             int offset = -3;
             int index = newInstructions.FindIndex(instruction => instruction.Calls(Method(typeof(ICandy), nameof(ICandy.ServerApplyEffects)))) + offset;
@@ -95,7 +97,7 @@ namespace Exiled.Events.Patches.Events.Scp330
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

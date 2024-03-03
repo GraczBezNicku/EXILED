@@ -8,13 +8,14 @@
 namespace Exiled.API.Features.Pickups
 {
     using Exiled.API.Enums;
+    using Exiled.API.Interfaces;
 
     using BaseRadio = InventorySystem.Items.Radio.RadioPickup;
 
     /// <summary>
     /// A wrapper class for a Radio pickup.
     /// </summary>
-    public class RadioPickup : Pickup
+    public class RadioPickup : Pickup, IWrapper<BaseRadio>
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="RadioPickup"/> class.
@@ -41,7 +42,7 @@ namespace Exiled.API.Features.Pickups
         public new BaseRadio Base { get; }
 
         /// <summary>
-        /// Gets or sets the Radio Energy.
+        /// Gets or sets the Radio Battery Level.
         /// </summary>
         public float BatteryLevel
         {

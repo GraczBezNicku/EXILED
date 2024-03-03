@@ -10,6 +10,8 @@ namespace Exiled.Events.Patches.Events.Map
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Map;
 
     using Handlers;
@@ -18,20 +20,19 @@ namespace Exiled.Events.Patches.Events.Map
 
     using LightContainmentZoneDecontamination;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="DecontaminationController.FinishDecontamination" />.
-    ///     Adds the <see cref="Decontaminating" /> event.
+    /// Patches <see cref="DecontaminationController.FinishDecontamination" />.
+    /// Adds the <see cref="Map.Decontaminating" /> event.
     /// </summary>
+    [EventPatch(typeof(Map), nameof(Map.Decontaminating))]
     [HarmonyPatch(typeof(DecontaminationController), nameof(DecontaminationController.FinishDecontamination))]
     internal static class Decontaminating
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = newInstructions[newInstructions.Count - 1].labels[0];
 
@@ -58,7 +59,7 @@ namespace Exiled.Events.Patches.Events.Map
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

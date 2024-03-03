@@ -11,28 +11,29 @@ namespace Exiled.Events.Patches.Events.Map
     using System.Reflection.Emit;
     using System.Text.RegularExpressions;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Map;
 
     using Handlers;
 
     using HarmonyLib;
 
-    using NorthwoodLib.Pools;
-
     using Respawning.NamingRules;
 
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patch the <see cref="NineTailedFoxNamingRule.PlayEntranceAnnouncement(string)" />.
-    ///     Adds the <see cref="Map.AnnouncingNtfEntrance" /> event.
+    /// Patch the <see cref="NineTailedFoxNamingRule.PlayEntranceAnnouncement(string)" />.
+    /// Adds the <see cref="Map.AnnouncingNtfEntrance" /> event.
     /// </summary>
+    [EventPatch(typeof(Map), nameof(Map.AnnouncingNtfEntrance))]
     [HarmonyPatch(typeof(NineTailedFoxNamingRule), nameof(NineTailedFoxNamingRule.PlayEntranceAnnouncement))]
     internal static class AnnouncingNtfEntrance
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             LocalBuilder ev = generator.DeclareLocal(typeof(AnnouncingNtfEntranceEventArgs));
             LocalBuilder unitInformation = generator.DeclareLocal(typeof(string[]));
@@ -125,7 +126,7 @@ namespace Exiled.Events.Patches.Events.Map
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

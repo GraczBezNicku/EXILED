@@ -10,7 +10,9 @@ namespace Exiled.Events.Patches.Events.Player
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
-    using Exiled.API.Features;
+    using API.Features;
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
@@ -18,27 +20,26 @@ namespace Exiled.Events.Patches.Events.Player
     using InventorySystem.Items;
     using InventorySystem.Items.Radio;
 
-    using NorthwoodLib.Pools;
-
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="RadioItem.ServerProcessCmd(RadioMessages.RadioCommand)" />.
-    ///     Adds the <see cref="Handlers.Player.ChangingRadioPreset" /> event.
+    /// Patches <see cref="RadioItem.ServerProcessCmd(RadioMessages.RadioCommand)" />.
+    /// Adds the <see cref="Handlers.Player.ChangingRadioPreset" /> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.ChangingRadioPreset))]
     [HarmonyPatch(typeof(RadioItem), nameof(RadioItem.ServerProcessCmd))]
     internal static class ChangingRadioPreset
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
             LocalBuilder ev = generator.DeclareLocal(typeof(ChangingRadioPresetEventArgs));
 
-            const int offset = 0;
-            int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Ldc_I4_S) + offset;
+            const int offset = -5;
+            int index = newInstructions.FindLastIndex(instruction => instruction.opcode == OpCodes.Newobj) + offset;
 
             newInstructions.InsertRange(
                 index,
@@ -87,7 +88,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

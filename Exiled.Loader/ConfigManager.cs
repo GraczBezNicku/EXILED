@@ -17,6 +17,7 @@ namespace Exiled.Loader
     using API.Interfaces;
 
     using Exiled.API.Features;
+    using Exiled.API.Features.Pools;
 
     using YamlDotNet.Core;
 
@@ -26,7 +27,7 @@ namespace Exiled.Loader
     public static class ConfigManager
     {
         /// <summary>
-        /// Loads all plugin configs.
+        /// Loads all the plugin configs.
         /// </summary>
         /// <param name="rawConfigs">The raw configs to be loaded.</param>
         /// <returns>Returns a dictionary of loaded configs.</returns>
@@ -36,7 +37,7 @@ namespace Exiled.Loader
             {
                 Log.Info($"Loading plugin configs... ({LoaderPlugin.Config.ConfigType})");
 
-                Dictionary<string, object> rawDeserializedConfigs = Loader.Deserializer.Deserialize<Dictionary<string, object>>(rawConfigs) ?? new Dictionary<string, object>();
+                Dictionary<string, object> rawDeserializedConfigs = Loader.Deserializer.Deserialize<Dictionary<string, object>>(rawConfigs) ?? DictionaryPool<string, object>.Pool.Get();
                 SortedDictionary<string, IConfig> deserializedConfigs = new(StringComparer.Ordinal);
 
                 foreach (IPlugin<IConfig> plugin in Loader.Plugins)
@@ -53,6 +54,7 @@ namespace Exiled.Loader
 
                 Log.Info("Plugin configs loaded successfully!");
 
+                DictionaryPool<string, object>.Pool.Return(rawDeserializedConfigs);
                 return deserializedConfigs;
             }
             catch (Exception exception)
@@ -64,7 +66,7 @@ namespace Exiled.Loader
         }
 
         /// <summary>
-        /// Loads the config of a plugin using the actual distribution.
+        /// Loads the config of a plugin using the distribution.
         /// </summary>
         /// <param name="plugin">The plugin which config will be loaded.</param>
         /// <param name="rawConfigs">The raw configs to detect if the plugin already has generated configs.</param>
@@ -83,10 +85,7 @@ namespace Exiled.Loader
         /// <returns>The <see cref="IConfig"/> of the plugin.</returns>
         public static IConfig LoadDefaultConfig(this IPlugin<IConfig> plugin, Dictionary<string, object> rawConfigs)
         {
-            if (rawConfigs is null)
-            {
-                rawConfigs = Loader.Deserializer.Deserialize<Dictionary<string, object>>(Read()) ?? new Dictionary<string, object>();
-            }
+            rawConfigs ??= Loader.Deserializer.Deserialize<Dictionary<string, object>>(Read()) ?? new Dictionary<string, object>();
 
             if (!rawConfigs.TryGetValue(plugin.Prefix, out object rawDeserializedConfig))
             {
@@ -99,7 +98,8 @@ namespace Exiled.Loader
 
             try
             {
-                config = (IConfig)Loader.Deserializer.Deserialize(Loader.Serializer.Serialize(rawDeserializedConfig), plugin.Config.GetType());
+                string rawConfigString = Loader.Serializer.Serialize(rawDeserializedConfig);
+                config = (IConfig)Loader.Deserializer.Deserialize(rawConfigString, plugin.Config.GetType());
                 plugin.Config.CopyProperties(config);
             }
             catch (YamlException yamlException)
@@ -141,7 +141,7 @@ namespace Exiled.Loader
         }
 
         /// <summary>
-        /// Reads, Loads and Saves plugin configs.
+        /// Reads, loads, and saves plugin configs.
         /// </summary>
         /// <returns>Returns a value indicating if the reloading process has been completed successfully or not.</returns>
         public static bool Reload() => Save(LoadSorted(Read()));

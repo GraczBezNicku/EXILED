@@ -12,7 +12,9 @@ namespace Exiled.API.Features.Core
     using System.Linq;
 
     using Exiled.API.Features.Core.Interfaces;
-
+    using Exiled.API.Features.DynamicEvents;
+    using Exiled.API.Features.Pools;
+    using Exiled.API.Interfaces;
     using MEC;
 
     using UnityEngine;
@@ -20,14 +22,14 @@ namespace Exiled.API.Features.Core
     /// <summary>
     /// Actor is the base class for a <see cref="EObject"/> that can be placed or spawned in-game.
     /// </summary>
-    public abstract class EActor : EObject, IEntity
+    public abstract class EActor : EObject, IEntity, IWorldSpace
     {
         /// <summary>
         /// The default fixed tick rate.
         /// </summary>
         public const float DefaultFixedTickRate = TickComponent.DefaultFixedTickRate;
 
-        private readonly HashSet<EActor> componentsInChildren = new();
+        private readonly HashSet<EActor> componentsInChildren = HashSetPool<EActor>.Pool.Get();
         private CoroutineHandle serverTick;
         private bool canEverTick;
         private float fixedTickRate;
@@ -267,6 +269,7 @@ namespace Exiled.API.Features.Core
         /// </summary>
         protected virtual void SubscribeEvents()
         {
+            StaticActor.Get<DynamicEventManager>().BindAllFromTypeInstance(this);
         }
 
         /// <summary>
@@ -274,6 +277,7 @@ namespace Exiled.API.Features.Core
         /// </summary>
         protected virtual void UnsubscribeEvents()
         {
+            StaticActor.Get<DynamicEventManager>().UnbindAllFromTypeInstance(this);
         }
 
         /// <inheritdoc/>
@@ -281,7 +285,9 @@ namespace Exiled.API.Features.Core
         {
             base.OnBeginDestroy();
 
+            HashSetPool<EActor>.Pool.Return(componentsInChildren);
             Timing.KillCoroutines(serverTick);
+
             OnEndPlay();
         }
 

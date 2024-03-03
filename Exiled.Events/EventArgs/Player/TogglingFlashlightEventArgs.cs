@@ -11,56 +11,59 @@ namespace Exiled.Events.EventArgs.Player
     using API.Features.Items;
 
     using Interfaces;
-
-    using InventorySystem.Items.Flashlight;
+    using InventorySystem.Items.ToggleableLights;
 
     /// <summary>
-    ///     Contains all information before a player toggles the flashlight.
+    /// Contains all information before a player toggles a flashlight.
     /// </summary>
-    public class TogglingFlashlightEventArgs : IPlayerEvent, IDeniableEvent
+    public class TogglingFlashlightEventArgs : IPlayerEvent, IDeniableEvent, IItemEvent
     {
+        private readonly bool initialState;
+
         /// <summary>
-        ///     Initializes a new instance of the <see cref="TogglingFlashlightEventArgs" /> class.
+        /// Initializes a new instance of the <see cref="TogglingFlashlightEventArgs" /> class.
         /// </summary>
-        /// <param name="player">
-        ///     <inheritdoc cref="Player" />
+        /// <param name="hub">
+        /// <inheritdoc cref="Player" />
         /// </param>
         /// <param name="flashlight">
-        ///     <inheritdoc cref="Flashlight" />
+        /// <inheritdoc cref="Flashlight" />
         /// </param>
         /// <param name="newState">
-        ///     <inheritdoc cref="NewState" />
+        /// <inheritdoc cref="NewState" />
         /// </param>
-        /// <param name="isAllowed">
-        ///     <inheritdoc cref="IsAllowed" />
-        /// </param>
-        public TogglingFlashlightEventArgs(Player player, FlashlightItem flashlight, bool newState, bool isAllowed = true)
+        public TogglingFlashlightEventArgs(ReferenceHub hub, ToggleableLightItemBase flashlight, bool newState)
         {
-            Player = player;
+            Player = Player.Get(hub);
             Flashlight = (Flashlight)Item.Get(flashlight);
+            initialState = newState;
             NewState = newState;
-            IsAllowed = isAllowed;
         }
 
         /// <summary>
-        ///     Gets the <see cref="API.Features.Items.Flashlight" /> being toggled.
+        /// Gets the <see cref="API.Features.Items.Flashlight" /> being toggled.
         /// </summary>
         public Flashlight Flashlight { get; }
 
-#pragma warning disable SA1623 // Property summary documentation should match accessors
+        /// <inheritdoc/>
+        public Item Item => Flashlight;
+
         /// <summary>
-        ///     Gets or sets the new flashlight state.
+        /// Gets or sets a value indicating whether or not the flashlight should be on.
         /// </summary>
         public bool NewState { get; set; }
-#pragma warning restore SA1623 // Property summary documentation should match accessors
 
         /// <summary>
-        ///     Gets or sets a value indicating whether or not the player can toggle the flashlight.
+        /// Gets or sets a value indicating whether or not the player can toggle the flashlight.
         /// </summary>
-        public bool IsAllowed { get; set; }
+        public bool IsAllowed
+        {
+            get => NewState == initialState;
+            set => NewState = value ? initialState : !initialState;
+        }
 
         /// <summary>
-        ///     Gets the player who's toggling the flashlight.
+        /// Gets the player who's toggling the flashlight.
         /// </summary>
         public Player Player { get; }
     }

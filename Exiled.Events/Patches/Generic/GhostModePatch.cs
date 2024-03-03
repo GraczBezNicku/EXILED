@@ -10,12 +10,11 @@ namespace Exiled.Events.Patches.Generic
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
-    using Exiled.API.Features;
-    using Exiled.API.Features.Roles;
+    using API.Features;
+    using API.Features.Pools;
+    using API.Features.Roles;
 
     using HarmonyLib;
-
-    using NorthwoodLib.Pools;
 
     using PlayerRoles.FirstPersonControl.NetworkMessages;
     using PlayerRoles.Visibility;
@@ -23,14 +22,14 @@ namespace Exiled.Events.Patches.Generic
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    /// Patches <see cref="ServerConsole.RefreshEmailSetStatus"/> to prevent the server from being listed.
+    /// Patches <see cref="FpcServerPositionDistributor.WriteAll"/> to add <see cref="FpcRole.IsInvisible"/> and <see cref="FpcRole.IsInvisibleFor"/> functional.
     /// </summary>
     [HarmonyPatch(typeof(FpcServerPositionDistributor), nameof(FpcServerPositionDistributor.WriteAll))]
     internal class GhostModePatch
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             const int offset = 6;
             int index = newInstructions.FindIndex(
@@ -56,7 +55,7 @@ namespace Exiled.Events.Patches.Generic
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
 
         private static void HandleGhostMode(ReferenceHub hubReceiver, ReferenceHub hubTarget, ref bool isInvisible)

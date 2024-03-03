@@ -10,28 +10,28 @@ namespace Exiled.Events.Patches.Events.Cassie
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Cassie;
 
     using Handlers;
 
     using HarmonyLib;
-
-    using NorthwoodLib.Pools;
-
     using Respawning;
 
     using static HarmonyLib.AccessTools;
 
     /// <summary>
-    ///     Patches <see cref="RespawnEffectsController.PlayCassieAnnouncement(string, bool, bool, bool)" />.
-    ///     Adds the <see cref="Cassie.SendingCassieMessage" /> event.
+    /// Patches <see cref="RespawnEffectsController.PlayCassieAnnouncement(string, bool, bool, bool)" />.
+    /// Adds the <see cref="Cassie.SendingCassieMessage" /> event.
     /// </summary>
+    [EventPatch(typeof(Cassie), nameof(Cassie.SendingCassieMessage))]
     [HarmonyPatch(typeof(RespawnEffectsController), nameof(RespawnEffectsController.PlayCassieAnnouncement))]
     internal static class SendingCassieMessage
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
@@ -73,7 +73,7 @@ namespace Exiled.Events.Patches.Events.Cassie
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

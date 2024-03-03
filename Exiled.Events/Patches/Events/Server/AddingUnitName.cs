@@ -10,11 +10,11 @@ namespace Exiled.Events.Patches.Events.Server
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Server;
 
     using HarmonyLib;
-
-    using NorthwoodLib.Pools;
 
     using Respawning;
     using Respawning.NamingRules;
@@ -25,12 +25,13 @@ namespace Exiled.Events.Patches.Events.Server
     /// Patches <see cref="UnitNameMessageHandler.SendNew(SpawnableTeamType, UnitNamingRule)"/>.
     /// Adds the <see cref="Handlers.Server.AddingUnitName"/> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Server), nameof(Handlers.Server.AddingUnitName))]
     [HarmonyPatch(typeof(UnitNameMessageHandler), nameof(UnitNameMessageHandler.SendNew))]
     internal static class AddingUnitName
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
@@ -62,7 +63,7 @@ namespace Exiled.Events.Patches.Events.Server
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

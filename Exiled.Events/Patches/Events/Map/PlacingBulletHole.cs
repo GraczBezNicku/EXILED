@@ -10,13 +10,16 @@ namespace Exiled.Events.Patches.Events.Map
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+
+    using Exiled.Events.Attributes;
+    using Exiled.Events.EventArgs.Map;
+
     using Handlers;
 
     using HarmonyLib;
 
     using InventorySystem.Items.Firearms.Modules;
-
-    using NorthwoodLib.Pools;
 
     using UnityEngine;
 
@@ -25,19 +28,20 @@ namespace Exiled.Events.Patches.Events.Map
     using Player = API.Features.Player;
 
     /// <summary>
-    ///     Patches <see cref="StandardHitregBase.PlaceBulletholeDecal" />.
-    ///     Adds the <see cref="Map.PlacingBulletHole" /> event.
+    /// Patches <see cref="StandardHitregBase.PlaceBulletholeDecal" />.
+    /// Adds the <see cref="Map.PlacingBulletHole" /> event.
     /// </summary>
+    [EventPatch(typeof(Map), nameof(Map.PlacingBulletHole))]
     [HarmonyPatch(typeof(StandardHitregBase), nameof(StandardHitregBase.PlaceBulletholeDecal))]
     internal static class PlacingBulletHole
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
-            LocalBuilder ev = generator.DeclareLocal(typeof(EventArgs.Map.PlacingBulletHole));
+            LocalBuilder ev = generator.DeclareLocal(typeof(PlacingBulletHoleEventArgs));
             LocalBuilder rotation = generator.DeclareLocal(typeof(Quaternion));
 
             newInstructions.InsertRange(
@@ -53,7 +57,7 @@ namespace Exiled.Events.Patches.Events.Map
                     new(OpCodes.Ldarg_2),
 
                     // PlacingBulletHole ev = new(Player, RaycastHit)
-                    new(OpCodes.Newobj, GetDeclaredConstructors(typeof(EventArgs.Map.PlacingBulletHole))[0]),
+                    new(OpCodes.Newobj, GetDeclaredConstructors(typeof(PlacingBulletHoleEventArgs))[0]),
                     new(OpCodes.Dup),
                     new(OpCodes.Dup),
                     new(OpCodes.Stloc_S, ev.LocalIndex),
@@ -63,19 +67,19 @@ namespace Exiled.Events.Patches.Events.Map
 
                     // if (!ev.IsAllowed)
                     //     return;
-                    new(OpCodes.Callvirt, PropertyGetter(typeof(EventArgs.Map.PlacingBulletHole), nameof(EventArgs.Map.PlacingBulletHole.IsAllowed))),
+                    new(OpCodes.Callvirt, PropertyGetter(typeof(PlacingBulletHoleEventArgs), nameof(PlacingBulletHoleEventArgs.IsAllowed))),
                     new(OpCodes.Brfalse, returnLabel),
 
                     // hit.info = ev.Position
                     new(OpCodes.Ldarga_S, 2),
                     new(OpCodes.Ldloc_S, ev.LocalIndex),
-                    new(OpCodes.Callvirt, PropertyGetter(typeof(EventArgs.Map.PlacingBulletHole), nameof(EventArgs.Map.PlacingBulletHole.Position))),
+                    new(OpCodes.Callvirt, PropertyGetter(typeof(PlacingBulletHoleEventArgs), nameof(PlacingBulletHoleEventArgs.Position))),
                     new(OpCodes.Callvirt, PropertySetter(typeof(RaycastHit), nameof(RaycastHit.point))),
 
                     // hit.normal = ev.Rotation
                     new(OpCodes.Ldarga_S, 2),
                     new(OpCodes.Ldloc_S, ev.LocalIndex),
-                    new(OpCodes.Callvirt, PropertyGetter(typeof(EventArgs.Map.PlacingBulletHole), nameof(EventArgs.Map.PlacingBulletHole.Rotation))),
+                    new(OpCodes.Callvirt, PropertyGetter(typeof(PlacingBulletHoleEventArgs), nameof(PlacingBulletHoleEventArgs.Rotation))),
                     new(OpCodes.Stloc_S, rotation),
                     new(OpCodes.Ldloca_S, rotation),
                     new(OpCodes.Callvirt, PropertyGetter(typeof(Quaternion), nameof(Quaternion.eulerAngles))),
@@ -87,7 +91,7 @@ namespace Exiled.Events.Patches.Events.Map
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

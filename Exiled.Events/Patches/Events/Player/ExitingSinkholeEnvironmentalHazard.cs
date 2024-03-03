@@ -10,13 +10,13 @@ namespace Exiled.Events.Patches.Events.Player
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Player;
 
     using HarmonyLib;
 
     using Hazards;
-
-    using NorthwoodLib.Pools;
 
     using static HarmonyLib.AccessTools;
 
@@ -24,13 +24,13 @@ namespace Exiled.Events.Patches.Events.Player
     /// Patches <see cref="SinkholeEnvironmentalHazard.OnExit(ReferenceHub)"/> with <see cref="SinkholeEnvironmentalHazard"/>.
     /// Adds the <see cref="Handlers.Player.ExitingEnvironmentalHazard"/> event.
     /// </summary>
-    /// <seealso cref="StayingOnSinkholeEnvironmentalHazard"/>
+    [EventPatch(typeof(Handlers.Player), nameof(Handlers.Player.ExitingEnvironmentalHazard))]
     [HarmonyPatch(typeof(SinkholeEnvironmentalHazard), nameof(SinkholeEnvironmentalHazard.OnExit))]
     internal static class ExitingSinkholeEnvironmentalHazard
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label ret = generator.DefineLabel();
 
@@ -66,7 +66,7 @@ namespace Exiled.Events.Patches.Events.Player
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

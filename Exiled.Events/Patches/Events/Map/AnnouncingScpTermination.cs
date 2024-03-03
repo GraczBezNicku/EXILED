@@ -10,29 +10,30 @@ namespace Exiled.Events.Patches.Events.Map
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
-    using Exiled.API.Features.DamageHandlers;
+    using API.Features.DamageHandlers;
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Map;
     using Exiled.Events.Handlers;
 
     using HarmonyLib;
-
-    using NorthwoodLib.Pools;
 
     using static HarmonyLib.AccessTools;
 
     using Player = API.Features.Player;
 
     /// <summary>
-    ///     Patches
-    ///     <see cref="NineTailedFoxAnnouncer.AnnounceScpTermination(ReferenceHub, PlayerStatsSystem.DamageHandlerBase)" />.
-    ///     Adds the <see cref="Map.AnnouncingScpTermination" /> event.
+    /// Patches
+    /// <see cref="NineTailedFoxAnnouncer.AnnounceScpTermination(ReferenceHub, PlayerStatsSystem.DamageHandlerBase)" />.
+    /// Adds the <see cref="Map.AnnouncingScpTermination" /> event.
     /// </summary>
+    [EventPatch(typeof(Map), nameof(Map.AnnouncingScpTermination))]
     [HarmonyPatch(typeof(NineTailedFoxAnnouncer), nameof(NineTailedFoxAnnouncer.AnnounceScpTermination))]
     internal static class AnnouncingScpTermination
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             LocalBuilder ev = generator.DeclareLocal(typeof(AnnouncingScpTerminationEventArgs));
 
@@ -86,7 +87,7 @@ namespace Exiled.Events.Patches.Events.Map
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

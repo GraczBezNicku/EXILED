@@ -11,7 +11,8 @@ namespace Exiled.Events.Patches.Events.Map
     using System.Reflection.Emit;
 
     using API.Features;
-
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Map;
 
     using Footprinting;
@@ -20,16 +21,15 @@ namespace Exiled.Events.Patches.Events.Map
 
     using InventorySystem.Items.ThrowableProjectiles;
 
-    using NorthwoodLib.Pools;
-
     using UnityEngine;
 
     using static HarmonyLib.AccessTools;
 
     /// <summary>
     /// Patches <see cref="ExplosionGrenade.Explode(Footprint, Vector3, ExplosionGrenade)"/>.
-    /// Adds the <see cref="Handlers.Map.OnExplodingGrenade"/> event.
+    /// Adds the <see cref="Handlers.Map.ExplodingGrenade"/> event.
     /// </summary>
+    [EventPatch(typeof(Handlers.Map), nameof(Handlers.Map.ExplodingGrenade))]
     [HarmonyPatch(typeof(ExplosionGrenade), nameof(ExplosionGrenade.Explode))]
     internal static class ExplodingFragGrenade
     {
@@ -41,24 +41,25 @@ namespace Exiled.Events.Patches.Events.Map
         /// <returns>An array of colliders.</returns>
         public static Collider[] TrimColliders(ExplodingGrenadeEventArgs ev, Collider[] colliderArray)
         {
-            List<Collider> colliders = new();
+            List<Collider> colliders = ListPool<Collider>.Pool.Get();
 
             foreach (Collider collider in colliderArray)
             {
-                if (!collider.TryGetComponent(out IDestructible dest) ||
-                    Player.Get(dest.NetworkId) is not Player player ||
-                    ev.TargetsToAffect.Contains(player))
+                if (!collider.TryGetComponent(out IDestructible dest) || Player.Get(dest.NetworkId) is not Player player || ev.TargetsToAffect.Contains(player))
                 {
                     colliders.Add(collider);
                 }
             }
 
-            return colliders.ToArray();
+            Collider[] array = colliders.ToArray();
+            ListPool<Collider>.Pool.Return(colliders);
+
+            return array;
         }
 
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             int offset = 1;
             int index = newInstructions.FindIndex(i => i.opcode == OpCodes.Stloc_3) + offset;
@@ -71,10 +72,8 @@ namespace Exiled.Events.Patches.Events.Map
                 index,
                 new CodeInstruction[]
                 {
-                    // Player.Get(attacker.Hub);
+                    // attacker;
                     new(OpCodes.Ldarg_0),
-                    new(OpCodes.Ldfld, Field(typeof(Footprint), nameof(Footprint.Hub))),
-                    new(OpCodes.Call, Method(typeof(Player), nameof(Player.Get), new[] { typeof(ReferenceHub) })),
 
                     // position
                     new(OpCodes.Ldarg_1),
@@ -86,7 +85,7 @@ namespace Exiled.Events.Patches.Events.Map
                     new(OpCodes.Ldloc_3),
 
                     // ExplodingGrenadeEventArgs ev = new(player, position, grenade, colliders);
-                    new(OpCodes.Newobj, DeclaredConstructor(typeof(ExplodingGrenadeEventArgs), new[] { typeof(Player), typeof(Vector3), typeof(EffectGrenade), typeof(Collider[]) })),
+                    new(OpCodes.Newobj, DeclaredConstructor(typeof(ExplodingGrenadeEventArgs), new[] { typeof(Footprint), typeof(Vector3), typeof(ExplosionGrenade), typeof(Collider[]) })),
                     new(OpCodes.Dup),
                     new(OpCodes.Dup),
                     new(OpCodes.Stloc, ev.LocalIndex),
@@ -111,7 +110,7 @@ namespace Exiled.Events.Patches.Events.Map
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

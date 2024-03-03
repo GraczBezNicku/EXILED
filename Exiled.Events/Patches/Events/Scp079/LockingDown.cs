@@ -10,6 +10,8 @@ namespace Exiled.Events.Patches.Events.Scp079
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Scp079;
     using Exiled.Events.Handlers;
 
@@ -17,33 +19,32 @@ namespace Exiled.Events.Patches.Events.Scp079
 
     using Mirror;
 
-    using NorthwoodLib.Pools;
-
     using PlayerRoles.PlayableScps.Scp079;
     using PlayerRoles.PlayableScps.Scp079.Cameras;
-    using PlayerRoles.PlayableScps.Subroutines;
+    using PlayerRoles.Subroutines;
 
     using static HarmonyLib.AccessTools;
 
     using Player = API.Features.Player;
 
     /// <summary>
-    ///     Patches <see cref="Scp079LockdownRoomAbility.ServerProcessCmd(NetworkReader)" />.
-    ///     Adds the <see cref="LockingDownEventArgs" /> event for SCP-079.
+    /// Patches <see cref="Scp079LockdownRoomAbility.ServerProcessCmd(NetworkReader)" />.
+    /// Adds the <see cref="Scp079.LockingDown" /> event for SCP-079.
     /// </summary>
+    [EventPatch(typeof(Scp079), nameof(Scp079.LockingDown))]
     [HarmonyPatch(typeof(Scp079LockdownRoomAbility), nameof(Scp079LockdownRoomAbility.ServerProcessCmd))]
     internal static class LockingDown
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             Label returnLabel = generator.DefineLabel();
 
             LocalBuilder ev = generator.DeclareLocal(typeof(LockingDownEventArgs));
 
-            int offset = 0;
-            int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Ldc_I4_S) + offset;
+            int offset = -6;
+            int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Newobj) + offset;
 
             // LockingDownEventArgs ev = new(Player.Get(base.Owner), base.CurrentCamSync.CurrentCamera.Room, (float)this._cost);
             //
@@ -57,7 +58,7 @@ namespace Exiled.Events.Patches.Events.Scp079
                 {
                     // Player.Get(base.Owner)
                     new CodeInstruction(OpCodes.Ldarg_0),
-                    new(OpCodes.Call, PropertyGetter(typeof(ScpStandardSubroutine<Scp079Role>), nameof(ScpStandardSubroutine<Scp079Role>.Owner))),
+                    new(OpCodes.Call, PropertyGetter(typeof(StandardSubroutine<Scp079Role>), nameof(StandardSubroutine<Scp079Role>.Owner))),
                     new(OpCodes.Call, Method(typeof(Player), nameof(Player.Get), new[] { typeof(ReferenceHub) })),
 
                     // base.CurrentCamSync.CurrentCamera.Room
@@ -107,7 +108,7 @@ namespace Exiled.Events.Patches.Events.Scp079
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

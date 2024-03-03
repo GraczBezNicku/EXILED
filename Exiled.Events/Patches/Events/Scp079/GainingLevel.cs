@@ -10,30 +10,31 @@ namespace Exiled.Events.Patches.Events.Scp079
     using System.Collections.Generic;
     using System.Reflection.Emit;
 
+    using API.Features.Pools;
+    using Exiled.Events.Attributes;
     using Exiled.Events.EventArgs.Scp079;
     using Exiled.Events.Handlers;
 
     using HarmonyLib;
 
-    using NorthwoodLib.Pools;
-
     using PlayerRoles.PlayableScps.Scp079;
-    using PlayerRoles.PlayableScps.Subroutines;
+    using PlayerRoles.Subroutines;
 
     using static HarmonyLib.AccessTools;
 
     using Player = API.Features.Player;
 
     /// <summary>
-    ///     Patches <see cref="Scp079TierManager.AccessTierIndex" />.
-    ///     Adds the <see cref="Scp079.GainingLevel" /> event.
+    /// Patches <see cref="Scp079TierManager.AccessTierIndex" />.
+    /// Adds the <see cref="Scp079.GainingLevel" /> event.
     /// </summary>
+    [EventPatch(typeof(Scp079), nameof(Scp079.GainingLevel))]
     [HarmonyPatch(typeof(Scp079TierManager), nameof(Scp079TierManager.AccessTierIndex), MethodType.Setter)]
     internal static class GainingLevel
     {
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Shared.Rent(instructions);
+            List<CodeInstruction> newInstructions = ListPool<CodeInstruction>.Pool.Get(instructions);
 
             const int offset = 1;
             int index = newInstructions.FindIndex(instruction => instruction.opcode == OpCodes.Ret) + offset;
@@ -56,7 +57,7 @@ namespace Exiled.Events.Patches.Events.Scp079
                 {
                     // Player.Get(base.Owner)
                     new CodeInstruction(OpCodes.Ldarg_0).MoveLabelsFrom(newInstructions[index]),
-                    new(OpCodes.Call, PropertyGetter(typeof(ScpStandardSubroutine<Scp079Role>), nameof(ScpStandardSubroutine<Scp079Role>.Owner))),
+                    new(OpCodes.Call, PropertyGetter(typeof(StandardSubroutine<Scp079Role>), nameof(StandardSubroutine<Scp079Role>.Owner))),
                     new(OpCodes.Call, Method(typeof(Player), nameof(Player.Get), new[] { typeof(ReferenceHub) })),
 
                     // value + 1
@@ -94,7 +95,7 @@ namespace Exiled.Events.Patches.Events.Scp079
             for (int z = 0; z < newInstructions.Count; z++)
                 yield return newInstructions[z];
 
-            ListPool<CodeInstruction>.Shared.Return(newInstructions);
+            ListPool<CodeInstruction>.Pool.Return(newInstructions);
         }
     }
 }

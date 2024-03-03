@@ -7,8 +7,10 @@
 
 namespace Exiled.API.Features
 {
-    using Enums;
+    using System.Collections.Generic;
 
+    using Enums;
+    using Interactables.Interobjects.DoorUtils;
     using Mirror;
 
     using UnityEngine;
@@ -18,6 +20,8 @@ namespace Exiled.API.Features
     /// </summary>
     public static class Warhead
     {
+        private static AlphaWarheadOutsitePanel alphaWarheadOutsitePanel;
+
         /// <summary>
         /// Gets the cached <see cref="AlphaWarheadController"/> component.
         /// </summary>
@@ -26,17 +30,40 @@ namespace Exiled.API.Features
         /// <summary>
         /// Gets the cached <see cref="AlphaWarheadNukesitePanel"/> component.
         /// </summary>
-        public static AlphaWarheadNukesitePanel SitePanel { get; internal set; }
+        public static AlphaWarheadNukesitePanel SitePanel => AlphaWarheadOutsitePanel.nukeside;
 
         /// <summary>
         /// Gets the cached <see cref="AlphaWarheadOutsitePanel"/> component.
         /// </summary>
-        public static AlphaWarheadOutsitePanel OutsitePanel { get; internal set; }
+        public static AlphaWarheadOutsitePanel OutsitePanel => alphaWarheadOutsitePanel != null ? alphaWarheadOutsitePanel : (alphaWarheadOutsitePanel = Object.FindObjectOfType<AlphaWarheadOutsitePanel>());
 
         /// <summary>
         /// Gets the <see cref="GameObject"/> of the warhead lever.
         /// </summary>
         public static GameObject Lever => SitePanel.lever.gameObject;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether or not automatic detonation is enabled.
+        /// </summary>
+        public static bool AutoDetonate
+        {
+            get => Controller._autoDetonate;
+            set => Controller._autoDetonate = value;
+        }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether or not doors will be opened when the warhead activates.
+        /// </summary>
+        public static bool OpenDoors
+        {
+            get => Controller._openDoors;
+            set => Controller._openDoors = value;
+        }
+
+        /// <summary>
+        /// Gets all of the warhead blast doors.
+        /// </summary>
+        public static IReadOnlyCollection<BlastDoor> BlastDoors => BlastDoor.Instances;
 
         /// <summary>
         /// Gets or sets a value indicating whether or not the warhead lever is enabled.
@@ -99,12 +126,7 @@ namespace Exiled.API.Features
         public static float DetonationTimer
         {
             get => AlphaWarheadController.TimeUntilDetonation;
-            set
-            {
-                Controller.Info.StartTime = NetworkTime.time;
-                Controller.CurScenario.TimeToDetonate = (int)value;
-                Controller.CurScenario.AdditionalTime = 0;
-            }
+            set => Controller.ForceTime(value);
         }
 
         /// <summary>
@@ -122,9 +144,33 @@ namespace Exiled.API.Features
         }
 
         /// <summary>
+        /// Gets or sets the amount of kills caused by the warhead (shown on the summary screen).
+        /// </summary>
+        public static int Kills
+        {
+            get => Controller.WarheadKills;
+            set => Controller.WarheadKills = value;
+        }
+
+        /// <summary>
         /// Gets a value indicating whether or not the warhead can be started.
         /// </summary>
         public static bool CanBeStarted => !IsInProgress && !IsDetonated && Controller.CooldownEndTime <= NetworkTime.time;
+
+        /// <summary>
+        /// Closes the surface blast doors.
+        /// </summary>
+        public static void CloseBlastDoors()
+        {
+            foreach (BlastDoor door in BlastDoors)
+                door.SetClosed(false, true);
+        }
+
+        /// <summary>
+        /// Opens or closes all doors on the map, based on the provided <paramref name="open"/>.
+        /// </summary>
+        /// <param name="open">Whether to open or close all doors on the map.</param>
+        public static void TriggerDoors(bool open) => DoorEventOpenerExtension.TriggerAction(open ? DoorEventOpenerExtension.OpenerEventType.WarheadStart : DoorEventOpenerExtension.OpenerEventType.WarheadCancel);
 
         /// <summary>
         /// Starts the warhead countdown.
@@ -143,15 +189,19 @@ namespace Exiled.API.Features
         /// <summary>
         /// Detonates the warhead.
         /// </summary>
-        public static void Detonate()
-        {
-            Controller.InstantPrepare();
-            Controller.Detonate();
-        }
+        public static void Detonate() => Controller.ForceTime(0f);
 
         /// <summary>
         /// Shake all players, like if the warhead has been detonated.
         /// </summary>
         public static void Shake() => Controller.RpcShake(false);
+
+        /// <summary>
+        /// Gets whether or not the provided position will be detonated by the alpha warhead.
+        /// </summary>
+        /// <param name="pos">The position to check.</param>
+        /// <param name="includeOnlyLifts">If <see langword="true"/>, only lifts will be checked.</param>
+        /// <returns>Whether or not the given position is prone to being detonated.</returns>
+        public static bool CanBeDetonated(Vector3 pos, bool includeOnlyLifts = false) => AlphaWarheadController.CanBeDetonated(pos, includeOnlyLifts);
     }
 }

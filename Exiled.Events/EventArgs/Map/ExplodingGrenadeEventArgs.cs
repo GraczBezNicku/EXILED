@@ -12,16 +12,18 @@ namespace Exiled.Events.EventArgs.Map
     using Exiled.API.Features;
     using Exiled.API.Features.Pickups;
     using Exiled.API.Features.Pickups.Projectiles;
+    using Exiled.API.Features.Pools;
     using Exiled.Events.EventArgs.Interfaces;
+    using Exiled.Events.Patches.Generic;
+
+    using Footprinting;
 
     using InventorySystem.Items.ThrowableProjectiles;
-
-    using NorthwoodLib.Pools;
 
     using UnityEngine;
 
     /// <summary>
-    ///     Contains all information before a grenade explodes.
+    /// Contains all information before a grenade explodes.
     /// </summary>
     public class ExplodingGrenadeEventArgs : IPlayerEvent, IDeniableEvent
     {
@@ -32,12 +34,12 @@ namespace Exiled.Events.EventArgs.Map
         /// <param name="position"><inheritdoc cref="Position"/></param>
         /// <param name="grenade"><inheritdoc cref="Projectile"/></param>
         /// <param name="targets"><inheritdoc cref="TargetsToAffect"/></param>
-        public ExplodingGrenadeEventArgs(Player thrower, Vector3 position, EffectGrenade grenade, Collider[] targets)
+        public ExplodingGrenadeEventArgs(Footprint thrower, Vector3 position, ExplosionGrenade grenade, Collider[] targets)
         {
-            Player = thrower ?? Server.Host;
+            Player = Player.Get(thrower.Hub);
             Projectile = (EffectGrenadeProjectile)Pickup.Get(grenade);
             Position = position;
-            TargetsToAffect = ListPool<Player>.Shared.Rent();
+            TargetsToAffect = ListPool<Player>.Pool.Get();
 
             if (Projectile.Base is not ExplosionGrenade)
                 return;
@@ -51,29 +53,51 @@ namespace Exiled.Events.EventArgs.Map
                 if (player is null)
                     continue;
 
-                if (!TargetsToAffect.Contains(player))
-                    TargetsToAffect.Add(player);
+                switch (Player is null)
+                {
+                    case false:
+                        {
+                            if (Server.FriendlyFire || IndividualFriendlyFire.CheckFriendlyFirePlayer(thrower, hub))
+                            {
+                                if (!TargetsToAffect.Contains(player))
+                                    TargetsToAffect.Add(player);
+                            }
+                        }
+
+                        break;
+                    case true:
+                        {
+                            if (Server.FriendlyFire || thrower.Hub == Server.Host.ReferenceHub || HitboxIdentity.IsEnemy(thrower.Role, hub.roleManager.CurrentRole.RoleTypeId))
+                            {
+                                if (!TargetsToAffect.Contains(player))
+                                    TargetsToAffect.Add(player);
+                            }
+                        }
+
+                        break;
+                }
             }
         }
 
         /// <summary>
-        ///     Initializes a new instance of the <see cref="ExplodingGrenadeEventArgs" /> class.
+        /// Initializes a new instance of the <see cref="ExplodingGrenadeEventArgs" /> class.
         /// </summary>
         /// <param name="thrower">
-        ///     <inheritdoc cref="Player" />
+        /// <inheritdoc cref="Player" />
         /// </param>
         /// <param name="grenade">
-        ///     <inheritdoc cref="Projectile" />
+        /// <inheritdoc cref="Projectile" />
         /// </param>
-        /// <param name="players">
-        ///     <inheritdoc cref="TargetsToAffect" />
+        /// <param name="isAllowed">
+        /// <inheritdoc cref="IsAllowed" />
         /// </param>
-        public ExplodingGrenadeEventArgs(Player thrower, EffectGrenade grenade, List<Player> players)
+        public ExplodingGrenadeEventArgs(Player thrower, EffectGrenade grenade, bool isAllowed = true)
         {
             Player = thrower ?? Server.Host;
             Projectile = (EffectGrenadeProjectile)Pickup.Get(grenade);
             Position = Projectile.Position;
-            TargetsToAffect = ListPool<Player>.Shared.Rent(players);
+            TargetsToAffect = ListPool<Player>.Pool.Get(Player.List);
+            IsAllowed = isAllowed;
         }
 
         /// <summary>
@@ -81,16 +105,16 @@ namespace Exiled.Events.EventArgs.Map
         /// </summary>
         ~ExplodingGrenadeEventArgs()
         {
-            ListPool<Player>.Shared.Return(TargetsToAffect);
+            ListPool<Player>.Pool.Return(TargetsToAffect);
         }
 
         /// <summary>
-        /// Gets the position where is exploding.
+        /// Gets the position where the grenade is exploding.
         /// </summary>
         public Vector3 Position { get; }
 
         /// <summary>
-        ///     Gets the players who could be affected by the grenade, if any, and the damage that would hurt them.
+        /// Gets the players who could be affected by the grenade, if any, and the damage that be dealt.
         /// </summary>
         public List<Player> TargetsToAffect { get; }
 
@@ -100,12 +124,12 @@ namespace Exiled.Events.EventArgs.Map
         public EffectGrenadeProjectile Projectile { get; }
 
         /// <summary>
-        ///     Gets or sets a value indicating whether or not the grenade can be thrown.
+        /// Gets or sets a value indicating whether or not the grenade can be thrown.
         /// </summary>
         public bool IsAllowed { get; set; } = true;
 
         /// <summary>
-        ///     Gets the player who thrown the grenade.
+        /// Gets the player who thrown the grenade.
         /// </summary>
         public Player Player { get; }
     }
